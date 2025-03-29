@@ -8,16 +8,17 @@ const MODEL_NAME = ENV.GEMINI_MODEL_NAME;
 // Get username from environment variables
 const username = ENV.USER_INFO.username;
 
-// Create personalized system instruction
-const systemInstruction = `You are a helpful AI assistant having a conversation with ${username}. 
-When responding, address ${username} by name occasionally to create a personalized experience.
-Be friendly, concise, and helpful. Always focus on answering questions directly.`;
+// Basic system instruction without personalization
+const baseSystemInstruction = `You are a helpful health information assistant. 
+Your primary focus is to provide clear, factual medical information and health advice.
+Always include disclaimers when appropriate, reminding users to consult healthcare professionals for personalized medical advice.
+Be friendly, concise, and helpful. Focus on answering health-related questions directly and accurately.`;
 
-// Initialize the Gemini model
+// Initialize the Gemini model with base instruction (personalization will be added contextually)
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ 
     model: MODEL_NAME, 
-    systemInstruction: systemInstruction
+    systemInstruction: baseSystemInstruction
 });
 
 // Global variables for tracking current conversation
@@ -25,12 +26,12 @@ let currentConversationId = null;
 let currentConversationTitle = "New Conversation";
 
 document.addEventListener("DOMContentLoaded", async () => {
-    // Personalize the welcome message
+    // Personalize the welcome message for health information
     const welcomeMessageElement = document.getElementById('welcome-message');
     if (welcomeMessageElement) {
         welcomeMessageElement.textContent = username !== 'User' 
-            ? `Hi ${username}! How can I help you today?` 
-            : `Hi there! How can I help you today?`;
+            ? `Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?` 
+            : `Hello! I'm your health information assistant. How can I help you with your health questions today?`;
     }
 
     await checkLogin(); // Ensure only logged-in users access this page
@@ -72,8 +73,8 @@ async function checkLogin() {
             const welcomeMessageElement = document.getElementById('welcome-message');
             if (welcomeMessageElement) {
                 welcomeMessageElement.textContent = username !== 'User' 
-                    ? `Hi ${username}! How can I help you today?` 
-                    : `Hi there! How can I help you today?`;
+                    ? `Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?` 
+                    : `Hello! I'm your health information assistant. How can I help you with your health questions today?`;
             }
         }
     } catch (error) {
@@ -157,6 +158,17 @@ async function loadConversation(conversationId) {
             
             // Set current conversation
             currentConversationId = conversationId;
+            
+            // Find and set the conversation title
+            const conversationElements = document.querySelectorAll(`.conversation-item .rename-btn[data-id="${conversationId}"]`);
+            if (conversationElements.length > 0) {
+                const titleElement = conversationElements[0].closest('.conversation-item').querySelector('.conversation-title');
+                if (titleElement) {
+                    currentConversationTitle = titleElement.textContent;
+                    // Update document title with conversation title
+                    document.title = `${currentConversationTitle} - AI Assistant`;
+                }
+            }
             
             // Group messages by date
             const messagesByDate = {};
@@ -279,15 +291,106 @@ async function sendMessage() {
     chatContainer.scrollTop = chatContainer.scrollHeight;
 
     try {
-        const result = await model.generateContent(message);
-        const response = await result.response.text();
-
+        let result;
+        let summaryPrompt;
+        let currentSummary = "";
+        let customModel;
+        
+        // Get conversation history for context if this is not a new conversation
+        if (!isNewConversation) {
+            try {
+                // Fetch conversation history
+                const historyResponse = await fetch(`backend.php?get_history=true&conversation_id=${currentConversationId}`);
+                
+                if (historyResponse.ok) {
+                    const historyData = await historyResponse.json();
+                    
+                    // Check if we have a summary to use
+                    if (historyData.summary) {
+                        currentSummary = historyData.summary;
+                        
+                        // For existing conversations with history, use a context-aware system instruction
+                        // that doesn't need personalized greeting but focuses on medical information
+                        const contextSystemInstruction = `${baseSystemInstruction}
+Based on this conversation summary: "${currentSummary}", 
+provide a focused healthcare response that maintains contextual relevance.`;
+                        
+                        // Create custom model instance with context-aware system instruction
+                        customModel = genAI.getGenerativeModel({ 
+                            model: MODEL_NAME, 
+                            systemInstruction: contextSystemInstruction
+                        });
+                    } else {
+                        // No summary yet, but we have history - use the base model
+                        customModel = model;
+                    }
+                    
+                    if (historyData.messages && historyData.messages.length > 0) {
+                        // Create a dual-purpose prompt with summary request
+                        const summaryContext = currentSummary 
+                            ? `Current conversation summary: ${currentSummary}\n\n` 
+                            : "There is no summary yet for this conversation. Please create one.\n\n";
+                            
+                        summaryPrompt = `${summaryContext}${message}\n\n===\nBased on our conversation, please provide two things:\n1. A direct response to my health question above.\n2. An updated brief summary (2-3 sentences) of our entire health-related conversation including this latest exchange.\n\nFormat your answer with "RESPONSE:" followed by your response, then "SUMMARY:" followed by the updated summary.`;
+                        
+                        // Create a chat with history
+                        const chat = customModel.startChat({
+                            history: historyData.messages,
+                            generationConfig: {
+                                maxOutputTokens: 8192,
+                            },
+                        });
+                        
+                        // Generate content with history context and summary request
+                        result = await chat.sendMessage(summaryPrompt);
+                    } else {
+                        // No message history yet, still request a summary with the response
+                        summaryPrompt = `${message}\n\n===\nPlease provide two things:\n1. A direct response to my health question above.\n2. A brief summary (1-2 sentences) of what we've just discussed related to health.\n\nFormat your answer with "RESPONSE:" followed by your response, then "SUMMARY:" followed by the summary.`;
+                        result = await customModel.generateContent(summaryPrompt);
+                    }
+                } else {
+                    // History fetch failed, still make a dual-purpose request
+                    summaryPrompt = `${message}\n\n===\nPlease provide two things:\n1. A direct response to my health question above.\n2. A brief summary (1-2 sentences) of what we've just discussed related to health.\n\nFormat your answer with "RESPONSE:" followed by your response, then "SUMMARY:" followed by the summary.`;
+                    result = await model.generateContent(summaryPrompt);
+                }
+            } catch (historyError) {
+                console.error("Error fetching conversation history:", historyError);
+                // Fallback to generating content with summary request
+                summaryPrompt = `${message}\n\n===\nPlease provide two things:\n1. A direct response to my health question above.\n2. A brief summary (1-2 sentences) of what we've just discussed related to health.\n\nFormat your answer with "RESPONSE:" followed by your response, then "SUMMARY:" followed by the updated summary.`;
+                result = await model.generateContent(summaryPrompt);
+            }
+        } else {
+            // New conversation - use personalized greeting for first-time interactions
+            const personalizedSystemInstruction = `You are a helpful health information assistant talking with ${username}.
+Your primary focus is to provide clear, factual medical information and health advice.
+Always include disclaimers when appropriate, reminding users to consult healthcare professionals for personalized medical advice.
+Since this is your first interaction, greet ${username} by name and be welcoming before providing health information.`;
+            
+            // Create a model with personalized first-interaction system instruction
+            const firstInteractionModel = genAI.getGenerativeModel({ 
+                model: MODEL_NAME, 
+                systemInstruction: personalizedSystemInstruction
+            });
+            
+            // New conversation, still request a summary with the response
+            summaryPrompt = `${message}\n\n===\nPlease provide two things:\n1. A direct response to my health question above, starting with a personalized greeting.\n2. A brief summary (1-2 sentences) of what we've just discussed related to health.\n\nFormat your answer with "RESPONSE:" followed by your response, then "SUMMARY:" followed by the summary.`;
+            result = await firstInteractionModel.generateContent(summaryPrompt);
+        }
+        
+        const fullResponse = await result.response.text();
+        
+        // Parse the response to separate the actual response from the summary
+        const responsePart = extractResponsePart(fullResponse);
+        const summaryPart = extractSummaryPart(fullResponse);
+        
         // Remove loader before adding response
         document.querySelector(".chat-messages .loader").remove();
-        addMessageToUI("model", response);
         
-        // Save chat to database and get the conversation ID
-        const conversationData = await saveChatToDatabase(userMessage, response);
+        // Only show the response part to the user, not the summary
+        addMessageToUI("model", responsePart);
+        
+        // Save chat to database with both response and summary
+        const conversationData = await saveChatToDatabase(userMessage, responsePart, summaryPart);
         
         // If this was a new conversation, generate a title for it
         if (isNewConversation && conversationData && conversationData.conversation_id) {
@@ -301,6 +404,50 @@ async function sendMessage() {
     }
 }
 
+// Helper function to extract the response part from the AI output
+function extractResponsePart(fullText) {
+    // Look for "RESPONSE:" marker
+    if (fullText.includes("RESPONSE:")) {
+        const responsePart = fullText.split("RESPONSE:")[1].split("SUMMARY:")[0].trim();
+        return responsePart;
+    }
+    
+    // If we can't find the expected format, try a simpler approach to separate
+    // response from summary (assume summary comes after a double line break)
+    const parts = fullText.split(/\n\s*\n/);
+    if (parts.length > 1) {
+        // Return everything except what looks like a summary at the end
+        const possibleSummary = parts[parts.length - 1];
+        if (possibleSummary.length < 250 && (possibleSummary.includes("summary") || possibleSummary.includes("Summary"))) {
+            return parts.slice(0, -1).join("\n\n");
+        }
+    }
+    
+    // Fallback - if we can't identify a clear summary, return the full text
+    return fullText;
+}
+
+// Helper function to extract the summary part from the AI output
+function extractSummaryPart(fullText) {
+    // Look for "SUMMARY:" marker
+    if (fullText.includes("SUMMARY:")) {
+        return fullText.split("SUMMARY:")[1].trim();
+    }
+    
+    // If we can't find the expected format, try to extract the last paragraph
+    // if it looks like a summary
+    const parts = fullText.split(/\n\s*\n/);
+    if (parts.length > 1) {
+        const possibleSummary = parts[parts.length - 1];
+        if (possibleSummary.length < 250 && (possibleSummary.includes("summary") || possibleSummary.includes("Summary"))) {
+            return possibleSummary;
+        }
+    }
+    
+    // Fallback - generate a very basic summary
+    return `Conversation about ${fullText.split(' ').slice(0, 5).join(' ')}...`;
+}
+
 // ✅ Generate a title using AI for a conversation based on user's message
 async function generateConversationTitle(userMessage, conversationId) {
     if (!userMessage || !conversationId) return;
@@ -309,18 +456,19 @@ async function generateConversationTitle(userMessage, conversationId) {
         // Only generate titles for messages that are meaningful (more than a few words)
         if (userMessage.split(' ').length < 3) {
             // Use a simple approach for very short messages
-            const shortTitle = userMessage.charAt(0).toUpperCase() + userMessage.slice(1);
+            const shortTitle = "Health Query: " + userMessage.charAt(0).toUpperCase() + userMessage.slice(1);
             updateConversationTitle(shortTitle, conversationId);
             return;
         }
         
-        // Prompt for the AI to generate a concise title
-        const titlePrompt = `Task: Create a short, descriptive title (3-5 words) for a conversation based on this first message.
+        // Prompt for the AI to generate a concise health-related title
+        const titlePrompt = `Task: Create a short, descriptive title (3-5 words) for a conversation about a health topic based on this first message.
 Message: "${userMessage}"
 
 Requirements:
 - Keep it under 5 words
-- Make it descriptive and specific
+- Make it descriptive of the health topic
+- Focus on the medical/health aspect
 - No quotes or punctuation
 - No explanations, just the title
 
@@ -343,7 +491,7 @@ Title:`;
             cleanTitle = cleanTitle.substring(0, 37) + '...';
         } else if (cleanTitle.length < 1) {
             // Fallback if we get an empty title
-            cleanTitle = "Question about " + userMessage.split(' ').slice(0, 3).join(' ');
+            cleanTitle = "Health Question: " + userMessage.split(' ').slice(0, 3).join(' ');
             if (cleanTitle.length > 40) {
                 cleanTitle = cleanTitle.substring(0, 37) + '...';
             }
@@ -361,7 +509,7 @@ Title:`;
     } catch (error) {
         console.error("Error generating conversation title:", error);
         // Fallback to a simple title
-        const fallbackTitle = "Conversation " + new Date().toLocaleTimeString();
+        const fallbackTitle = "Health Conversation " + new Date().toLocaleTimeString();
         updateConversationTitle(fallbackTitle, conversationId);
     }
 }
@@ -418,7 +566,7 @@ function showTitleNotification(title) {
 }
 
 // ✅ Save user message & AI response to the database
-async function saveChatToDatabase(userMessage, botResponse) {
+async function saveChatToDatabase(userMessage, botResponse, summary = null) {
     try {
         const postData = new URLSearchParams({
             user_message: userMessage,
@@ -428,6 +576,11 @@ async function saveChatToDatabase(userMessage, botResponse) {
         // Add conversation ID if we have one
         if (currentConversationId) {
             postData.append('conversation_id', currentConversationId);
+        }
+        
+        // Add the summary if we have one
+        if (summary) {
+            postData.append('conversation_summary', summary);
         }
         
         const response = await fetch("backend.php", {
@@ -566,16 +719,20 @@ async function startNewConversation() {
             currentConversationId = data.conversation_id;
             currentConversationTitle = data.title;
             
-            // Personalized welcome message using the username
+            // Personalized welcome message using the username, focused on health
             const welcomeMessage = username !== 'User' 
-                ? `<div class="model"><p>Hi ${username}! How can I help you today?</p></div>` 
-                : `<div class="model"><p>Hi there! How can I help you today?</p></div>`;
+                ? `<div class="model"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div>` 
+                : `<div class="model"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div>`;
             
             // Clear chat UI and add welcome message
             document.querySelector(".chat-messages").innerHTML = welcomeMessage;
             
-            // Refresh conversation list
+            // Always refresh conversation list to ensure new conversation appears 
+            // and is properly highlighted
             loadConversations();
+            
+            // Update document title to make it clear user started a new chat
+            document.title = "New Health Chat - AI Assistant";
         }
     } catch (error) {
         console.error("Error creating new conversation:", error);
@@ -603,5 +760,5 @@ function formatDate(date) {
 
 // ✅ Show error message if AI fails
 function showErrorMessage() {
-    addMessageToUI("model", "Oops! Something went wrong. Please try again.");
+    addMessageToUI("model", "I apologize, but I'm having trouble processing your health question right now. Please try again or rephrase your question. Remember, for urgent medical concerns, please contact a healthcare professional directly.");
 }

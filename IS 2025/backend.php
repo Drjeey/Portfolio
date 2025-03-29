@@ -164,12 +164,32 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 
+// Helper function to update conversation history (now directly in conversations table)
+function updateConversationSummary($conn, $conversation_id, $newSummary = null) {
+    if ($newSummary === null) {
+        return null; // If no summary provided, nothing to update
+    }
+    
+    // Update the conversation summary
+    $update_stmt = $conn->prepare("
+        UPDATE conversations 
+        SET conversation_summary = ? 
+        WHERE id = ?
+    ");
+    $update_stmt->bind_param("si", $newSummary, $conversation_id);
+    $update_stmt->execute();
+    $update_stmt->close();
+    
+    return $newSummary;
+}
+
 // Handle chat saving with conversation tracking
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !isset($_POST['action'])) {
     $user_id = $_SESSION['user_id'];
     $user_message = $_POST['user_message'] ?? '';
     $bot_message = $_POST['bot_message'] ?? '';
     $conversation_id = $_POST['conversation_id'] ?? 0;
+    $conversation_summary = $_POST['conversation_summary'] ?? null;
     $date = date("Y-m-d H:i:s"); // Use full timestamp
     
     // If no conversation_id is provided, create a new conversation
@@ -189,8 +209,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
             }
         }
         
-        $stmt = $conn->prepare("INSERT INTO conversations (user_id, title) VALUES (?, ?)");
-        $stmt->bind_param("is", $user_id, $title);
+        // Set initial summary if available
+        $sql = "INSERT INTO conversations (user_id, title";
+        $types = "is";
+        $params = array($user_id, $title);
+        
+        if ($conversation_summary !== null) {
+            $sql .= ", conversation_summary";
+            $types .= "s";
+            $params[] = $conversation_summary;
+        }
+        
+        $sql .= ") VALUES (?, ?";
+        if ($conversation_summary !== null) {
+            $sql .= ", ?";
+        }
+        $sql .= ")";
+        
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
         
         if ($stmt->execute()) {
             $conversation_id = $conn->insert_id;
@@ -205,9 +242,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
         $stmt = $conn->prepare("INSERT INTO chats (user_id, conversation_id, date, user_message, bot_message) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("iisss", $user_id, $conversation_id, $date, $user_message, $bot_message);
         if ($stmt->execute()) {
-            // Update the conversation's updated_at timestamp
-            $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW() WHERE id = ?");
-            $update_stmt->bind_param("i", $conversation_id);
+            // Update the conversation's updated_at timestamp and summary
+            if ($conversation_summary !== null) {
+                $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW(), conversation_summary = ? WHERE id = ?");
+                $update_stmt->bind_param("si", $conversation_summary, $conversation_id);
+            } else {
+                $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW() WHERE id = ?");
+                $update_stmt->bind_param("i", $conversation_id);
+            }
             $update_stmt->execute();
             $update_stmt->close();
             
@@ -222,6 +264,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
     } else {
         echo json_encode(["success" => false, "error" => "Both user and bot messages are required"]);
     }
+    exit;
+}
+
+// New endpoint to get conversation history and summary for AI context
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && isset($_GET['get_history']) && isset($_GET['conversation_id'])) {
+    $user_id = $_SESSION['user_id'];
+    $conversation_id = $_GET['conversation_id'];
+    
+    // Get conversation messages for history
+    $stmt = $conn->prepare("
+        SELECT 
+            c.user_message,
+            c.bot_message,
+            conv.conversation_summary
+        FROM chats c
+        JOIN conversations conv ON c.conversation_id = conv.id
+        WHERE c.conversation_id = ? AND c.user_id = ?
+        ORDER BY c.date ASC
+    ");
+    $stmt->bind_param("ii", $conversation_id, $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $messages = [];
+        $summary = null;
+        
+        // Format messages for the AI
+        while ($row = $result->fetch_assoc()) {
+            $messages[] = [
+                "role" => "user",
+                "parts" => [
+                    ["text" => $row["user_message"]]
+                ]
+            ];
+            $messages[] = [
+                "role" => "model",
+                "parts" => [
+                    ["text" => $row["bot_message"]]
+                ]
+            ];
+            
+            // Get summary from the last row (it will be the same for all rows)
+            $summary = $row["conversation_summary"];
+        }
+        
+        $response_data = ["messages" => $messages];
+        
+        // Add summary to the response if available
+        if (!empty($summary)) {
+            $response_data["summary"] = $summary;
+        }
+        
+        echo json_encode($response_data);
+    } else {
+        echo json_encode(["success" => false, "error" => "No messages found for this conversation"]);
+    }
+    $stmt->close();
     exit;
 }
 
