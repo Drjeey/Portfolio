@@ -3,19 +3,21 @@ import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
 // Get API key from environment variables (loaded by env.php)
 const API_KEY = ENV.GEMINI_API_KEY;
+const MODEL_NAME = ENV.GEMINI_MODEL_NAME;
 
-// Get business information from environment variables
-const businessInfo = `
-  Company Name: ${ENV.BUSINESS_INFO.name}
-  Address: ${ENV.BUSINESS_INFO.address}
-  Phone: ${ENV.BUSINESS_INFO.phone}
-`; 
+// Get username from environment variables
+const username = ENV.USER_INFO.username;
+
+// Create personalized system instruction
+const systemInstruction = `You are a helpful AI assistant having a conversation with ${username}. 
+When responding, address ${username} by name occasionally to create a personalized experience.
+Be friendly, concise, and helpful. Always focus on answering questions directly.`;
 
 // Initialize the Gemini model
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.0-flash", 
-    systemInstruction: businessInfo
+    model: MODEL_NAME, 
+    systemInstruction: systemInstruction
 });
 
 // Global variables for tracking current conversation
@@ -23,6 +25,14 @@ let currentConversationId = null;
 let currentConversationTitle = "New Conversation";
 
 document.addEventListener("DOMContentLoaded", async () => {
+    // Personalize the welcome message
+    const welcomeMessageElement = document.getElementById('welcome-message');
+    if (welcomeMessageElement) {
+        welcomeMessageElement.textContent = username !== 'User' 
+            ? `Hi ${username}! How can I help you today?` 
+            : `Hi there! How can I help you today?`;
+    }
+
     await checkLogin(); // Ensure only logged-in users access this page
     loadConversations(); // Load conversation list
     
@@ -57,8 +67,17 @@ async function checkLogin() {
                     addMessageToUI("model", bot);
                 });
             }
+        } else {
+            // If no conversation loaded, ensure welcome message is personalized
+            const welcomeMessageElement = document.getElementById('welcome-message');
+            if (welcomeMessageElement) {
+                welcomeMessageElement.textContent = username !== 'User' 
+                    ? `Hi ${username}! How can I help you today?` 
+                    : `Hi there! How can I help you today?`;
+            }
         }
-    } catch {
+    } catch (error) {
+        console.error("Error checking login:", error);
         window.location.href = "Form.php";
     }
 }
@@ -247,6 +266,10 @@ async function sendMessage() {
     input.value = "";
     addMessageToUI("user", message);
 
+    // Flag to track if this is the first message in a new conversation
+    const isNewConversation = !currentConversationId;
+    const userMessage = message; // Store for later use in title generation
+
     // ✅ Add loader while waiting for AI response
     const chatContainer = document.querySelector(".chat-messages");
     const loaderDiv = document.createElement("div");
@@ -262,7 +285,15 @@ async function sendMessage() {
         // Remove loader before adding response
         document.querySelector(".chat-messages .loader").remove();
         addMessageToUI("model", response);
-        saveChatToDatabase(message, response);
+        
+        // Save chat to database and get the conversation ID
+        const conversationData = await saveChatToDatabase(userMessage, response);
+        
+        // If this was a new conversation, generate a title for it
+        if (isNewConversation && conversationData && conversationData.conversation_id) {
+            generateConversationTitle(userMessage, conversationData.conversation_id);
+        }
+        
     } catch (error) {
         console.error("AI Response Error:", error);
         document.querySelector(".chat-messages .loader").remove();
@@ -276,44 +307,90 @@ async function generateConversationTitle(userMessage, conversationId) {
     
     try {
         // Only generate titles for messages that are meaningful (more than a few words)
-        if (userMessage.split(' ').length < 3) return;
+        if (userMessage.split(' ').length < 3) {
+            // Use a simple approach for very short messages
+            const shortTitle = userMessage.charAt(0).toUpperCase() + userMessage.slice(1);
+            updateConversationTitle(shortTitle, conversationId);
+            return;
+        }
         
         // Prompt for the AI to generate a concise title
-        const titlePrompt = `Generate a very concise title (5 words or less) for a conversation that starts with this message: "${userMessage}"`;
+        const titlePrompt = `Task: Create a short, descriptive title (3-5 words) for a conversation based on this first message.
+Message: "${userMessage}"
+
+Requirements:
+- Keep it under 5 words
+- Make it descriptive and specific
+- No quotes or punctuation
+- No explanations, just the title
+
+Title:`;
         
         // Get AI response for the title
         const result = await model.generateContent(titlePrompt);
         const titleSuggestion = await result.response.text();
         
-        // Clean up the title (remove quotes, periods, etc.)
-        let cleanTitle = titleSuggestion.replace(/["""'''.]/g, '').trim();
+        // Clean up the title (remove quotes, periods, new lines, etc.)
+        let cleanTitle = titleSuggestion
+            .replace(/["""'''.?!]/g, '')  // Remove punctuation
+            .replace(/^\s+|\s+$/g, '')    // Trim whitespace
+            .replace(/\n/g, '')           // Remove newlines
+            .replace(/Title:?\s*/i, '')   // Remove "Title:" prefix if present
+            .replace(/^(About|Regarding|RE:|On)\s/i, ''); // Remove common prefixes
         
         // Limit length
         if (cleanTitle.length > 40) {
             cleanTitle = cleanTitle.substring(0, 37) + '...';
+        } else if (cleanTitle.length < 1) {
+            // Fallback if we get an empty title
+            cleanTitle = "Question about " + userMessage.split(' ').slice(0, 3).join(' ');
+            if (cleanTitle.length > 40) {
+                cleanTitle = cleanTitle.substring(0, 37) + '...';
+            }
         }
         
+        // Capitalize first letter of each word for a cleaner look
+        cleanTitle = cleanTitle.split(' ')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+            .join(' ');
+        
+        console.log("Generated title:", cleanTitle);
+        
         // Update the conversation title in the database
-        if (cleanTitle) {
-            await fetch("backend.php", {
-                method: "POST",
-                headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: `action=rename_conversation&conversation_id=${conversationId}&title=${encodeURIComponent(cleanTitle)}`
-            });
-            
+        updateConversationTitle(cleanTitle, conversationId);
+    } catch (error) {
+        console.error("Error generating conversation title:", error);
+        // Fallback to a simple title
+        const fallbackTitle = "Conversation " + new Date().toLocaleTimeString();
+        updateConversationTitle(fallbackTitle, conversationId);
+    }
+}
+
+// Helper function to update conversation title in database
+async function updateConversationTitle(title, conversationId) {
+    if (!title || !conversationId) return;
+    
+    try {
+        const response = await fetch("backend.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `action=rename_conversation&conversation_id=${conversationId}&title=${encodeURIComponent(title)}`
+        });
+        
+        const data = await response.json();
+        if (data.success) {
             // Update current title and refresh conversation list
             if (conversationId === currentConversationId) {
-                currentConversationTitle = cleanTitle;
+                currentConversationTitle = title;
             }
             
             // Show title update notification
-            showTitleNotification(cleanTitle);
+            showTitleNotification(title);
             
             loadConversations();
         }
     } catch (error) {
-        console.error("Error generating conversation title:", error);
-        // Silent fail - we don't want to interrupt the user experience if title generation fails
+        console.error("Error updating conversation title:", error);
     }
 }
 
@@ -364,15 +441,14 @@ async function saveChatToDatabase(userMessage, botResponse) {
             // If this created a new conversation, update our current conversation ID
             if (data.conversation_id && !currentConversationId) {
                 currentConversationId = data.conversation_id;
-                
-                // Generate AI title for the new conversation
-                generateConversationTitle(userMessage, data.conversation_id);
-                
                 loadConversations(); // Refresh the conversation list
+                return data; // Return data for title generation
             }
         }
+        return null;
     } catch (error) {
         console.error("Error saving chat:", error);
+        return null;
     }
 }
 
@@ -381,19 +457,107 @@ function addMessageToUI(sender, message) {
     const chatContainer = document.querySelector(".chat-messages");
     const messageDiv = document.createElement("div");
     messageDiv.classList.add("chat-message", sender);
-    messageDiv.innerHTML = `<p>${message}</p>`;
+    
+    // Special handling for model responses, which may have complex formatting
+    if (sender === "model") {
+        // First, handle paragraphs by splitting on double newlines
+        const paragraphs = message.split(/\n\s*\n/);
+        
+        const formattedParagraphs = paragraphs.map(paragraph => {
+            // Format this individual paragraph
+            return formatParagraph(paragraph);
+        });
+        
+        // Join paragraphs with proper spacing
+        messageDiv.innerHTML = formattedParagraphs.join('<br><br>');
+    } else {
+        // For user messages, simple formatting is sufficient
+        let formattedMessage = message
+            .replace(/\n/g, '<br>')
+            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
+            
+        messageDiv.innerHTML = `<p>${formattedMessage}</p>`;
+    }
+    
     chatContainer.appendChild(messageDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// Helper function to format individual paragraphs with lists, quotes, etc.
+function formatParagraph(paragraph) {
+    // Check if this paragraph is a list
+    if (/^\s*(\d+\.\s|\*\s|-\s)/.test(paragraph)) {
+        return formatAsList(paragraph);
+    }
+    
+    // Regular paragraph formatting
+    let formatted = paragraph
+        // Convert URLs to clickable links
+        .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
+        
+        // Convert asterisk bullet points to list items
+        .replace(/^(\s*)\*\s(.+)$/gm, '<li>$2</li>')
+        
+        // Convert dash bullet points to list items
+        .replace(/^(\s*)-\s(.+)$/gm, '<li>$2</li>')
+        
+        // Convert numbered bullet points to list items
+        .replace(/^(\s*)\d+\.\s(.+)$/gm, '<li>$2</li>')
+        
+        // Convert newlines to breaks
+        .replace(/\n/g, '<br>');
+    
+    // Handle quoted text
+    formatted = formatted.replace(/[""]([^""]+)[""]/g, '<span class="quoted-text">"$1"</span>');
+    
+    // Wrap in paragraph if it doesn't contain list items
+    if (!formatted.includes('<li>')) {
+        formatted = `<p>${formatted}</p>`;
+    } else {
+        // If it has list items, wrap them in a ul
+        formatted = `<ul>${formatted}</ul>`;
+    }
+    
+    return formatted;
+}
+
+// Helper function to format text as a list
+function formatAsList(text) {
+    // Split into lines
+    const lines = text.split('\n');
+    
+    // Check if this is a numbered or bullet list
+    const isNumbered = /^\s*\d+\./.test(lines[0]);
+    
+    // Format each line as a list item
+    const listItems = lines.map(line => {
+        // Remove the bullet/number prefix and convert to list item
+        return `<li>${line.replace(/^\s*(\d+\.\s|\*\s|-\s)/, '')}</li>`;
+    });
+    
+    // Join and wrap in the appropriate list type
+    return isNumbered ? 
+        `<ol>${listItems.join('')}</ol>` : 
+        `<ul>${listItems.join('')}</ul>`;
 }
 
 // ✅ Start a new conversation (Clears UI but keeps history in DB)
 async function startNewConversation() {
     try {
+        // Create a better default title with date/time
+        const now = new Date();
+        const defaultTitle = `New Chat ${now.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        })}`;
+        
         // Create a new conversation in the database
         const response = await fetch("backend.php", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `action=new_conversation&title=New Conversation`
+            body: `action=new_conversation&title=${encodeURIComponent(defaultTitle)}`
         });
         
         const data = await response.json();
@@ -402,10 +566,13 @@ async function startNewConversation() {
             currentConversationId = data.conversation_id;
             currentConversationTitle = data.title;
             
-            // Clear chat UI
-            document.querySelector(".chat-messages").innerHTML = `
-                <div class="model"><p>Hi, how can I help you today?</p></div>
-            `;
+            // Personalized welcome message using the username
+            const welcomeMessage = username !== 'User' 
+                ? `<div class="model"><p>Hi ${username}! How can I help you today?</p></div>` 
+                : `<div class="model"><p>Hi there! How can I help you today?</p></div>`;
+            
+            // Clear chat UI and add welcome message
+            document.querySelector(".chat-messages").innerHTML = welcomeMessage;
             
             // Refresh conversation list
             loadConversations();

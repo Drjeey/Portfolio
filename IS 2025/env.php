@@ -1,4 +1,7 @@
 <?php
+// Start session to access user info
+session_start();
+
 // Set the content type to JavaScript
 header('Content-Type: application/javascript');
 
@@ -35,13 +38,15 @@ function loadEnv($path) {
 // Load environment variables
 $env = loadEnv(__DIR__ . '/.env');
 
+// Get current username from session if available
+$username = isset($_SESSION['username']) ? $_SESSION['username'] : 'User';
+
 // Create JavaScript environment object with default fallbacks
 echo 'const ENV = ' . json_encode([
     'GEMINI_API_KEY' => $env['GEMINI_API_KEY'] ?? 'demo-api-key',
-    'BUSINESS_INFO' => [
-        'name' => $env['BUSINESS_NAME'] ?? 'Demo Company',
-        'address' => $env['BUSINESS_ADDRESS'] ?? '123 Demo St',
-        'phone' => $env['BUSINESS_PHONE'] ?? '(000) 000-0000'
+    'GEMINI_MODEL_NAME' => $env['GEMINI_MODEL_NAME'] ?? 'gemini-1.5-flash',
+    'USER_INFO' => [
+        'username' => $username
     ]
 ]) . ';';
 ?> 

@@ -26,7 +26,7 @@
             </div>
             <div class="chat-messages">
                 <div class="model">
-                    <p>Hi, how can I help you today?</p>
+                    <p id="welcome-message">Welcome to the chat!</p>
                 </div>
             </div>
             <div class="input-area">
