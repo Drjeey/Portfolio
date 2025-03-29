@@ -1,12 +1,17 @@
-const API_KEY = "Gemini-Api key"; // Replace with actual API Key
+// Import the Google Generative AI library
 import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-const businessInfo = `
-  Company Name: ABC Corp
-  Address: 123 Main St
-  Phone: (555) 123-4567
-`; // Business information
+// Get API key from environment variables (loaded by env.php)
+const API_KEY = ENV.GEMINI_API_KEY;
 
+// Get business information from environment variables
+const businessInfo = `
+  Company Name: ${ENV.BUSINESS_INFO.name}
+  Address: ${ENV.BUSINESS_INFO.address}
+  Phone: ${ENV.BUSINESS_INFO.phone}
+`; 
+
+// Initialize the Gemini model
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ 
     model: "gemini-2.0-flash", 
@@ -265,6 +270,76 @@ async function sendMessage() {
     }
 }
 
+// ✅ Generate a title using AI for a conversation based on user's message
+async function generateConversationTitle(userMessage, conversationId) {
+    if (!userMessage || !conversationId) return;
+    
+    try {
+        // Only generate titles for messages that are meaningful (more than a few words)
+        if (userMessage.split(' ').length < 3) return;
+        
+        // Prompt for the AI to generate a concise title
+        const titlePrompt = `Generate a very concise title (5 words or less) for a conversation that starts with this message: "${userMessage}"`;
+        
+        // Get AI response for the title
+        const result = await model.generateContent(titlePrompt);
+        const titleSuggestion = await result.response.text();
+        
+        // Clean up the title (remove quotes, periods, etc.)
+        let cleanTitle = titleSuggestion.replace(/["""'''.]/g, '').trim();
+        
+        // Limit length
+        if (cleanTitle.length > 40) {
+            cleanTitle = cleanTitle.substring(0, 37) + '...';
+        }
+        
+        // Update the conversation title in the database
+        if (cleanTitle) {
+            await fetch("backend.php", {
+                method: "POST",
+                headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: `action=rename_conversation&conversation_id=${conversationId}&title=${encodeURIComponent(cleanTitle)}`
+            });
+            
+            // Update current title and refresh conversation list
+            if (conversationId === currentConversationId) {
+                currentConversationTitle = cleanTitle;
+            }
+            
+            // Show title update notification
+            showTitleNotification(cleanTitle);
+            
+            loadConversations();
+        }
+    } catch (error) {
+        console.error("Error generating conversation title:", error);
+        // Silent fail - we don't want to interrupt the user experience if title generation fails
+    }
+}
+
+// ✅ Show notification when AI generates a title
+function showTitleNotification(title) {
+    // Create notification element if it doesn't exist
+    let notification = document.querySelector('.title-notification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.className = 'title-notification';
+        const container = document.getElementById('notification-container') || document.body;
+        container.appendChild(notification);
+    }
+    
+    // Set notification text
+    notification.textContent = `Conversation titled: "${title}"`;
+    
+    // Show notification
+    notification.classList.add('show');
+    
+    // Hide notification after 3 seconds
+    setTimeout(() => {
+        notification.classList.remove('show');
+    }, 3000);
+}
+
 // ✅ Save user message & AI response to the database
 async function saveChatToDatabase(userMessage, botResponse) {
     try {
@@ -289,6 +364,10 @@ async function saveChatToDatabase(userMessage, botResponse) {
             // If this created a new conversation, update our current conversation ID
             if (data.conversation_id && !currentConversationId) {
                 currentConversationId = data.conversation_id;
+                
+                // Generate AI title for the new conversation
+                generateConversationTitle(userMessage, data.conversation_id);
+                
                 loadConversations(); // Refresh the conversation list
             }
         }

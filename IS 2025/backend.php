@@ -174,7 +174,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
     
     // If no conversation_id is provided, create a new conversation
     if (empty($conversation_id)) {
-        $title = substr($user_message, 0, 30) . (strlen($user_message) > 30 ? '...' : '');
+        // Generate a better title from the user message
+        if (strlen($user_message) <= 40) {
+            // Use the entire message if it's short
+            $title = $user_message;
+        } else {
+            // Try to extract the main topic/question from the first sentence
+            $firstSentence = preg_split('/[.!?]/', $user_message)[0];
+            if (strlen($firstSentence) <= 40) {
+                $title = $firstSentence;
+            } else {
+                // Just take the first 37 characters and add ellipsis
+                $title = substr($user_message, 0, 37) . '...';
+            }
+        }
+        
         $stmt = $conn->prepare("INSERT INTO conversations (user_id, title) VALUES (?, ?)");
         $stmt->bind_param("is", $user_id, $title);
         

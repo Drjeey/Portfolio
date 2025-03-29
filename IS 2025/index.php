@@ -37,6 +37,8 @@
             </div>
         </section>
     </div>
+    <!-- Notification container (will be populated by JavaScript) -->
+    <div id="notification-container"></div>
 <script>
     function checkLogin() {
             fetch("backend.php")
@@ -49,6 +51,9 @@
             .catch(() => window.location.href = "Form.php"); // Corrected to Form.php
         }
 </script>
+    <!-- Load environment variables first -->
+    <script src="env.php"></script>
+    <!-- Then load the main application code -->
     <script type="module" src="main.js"></script>
 </body>
 </html>

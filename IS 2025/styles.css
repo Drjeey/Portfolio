@@ -221,6 +221,27 @@
     padding: 10px;
 }
 
+/* Title update notification */
+.title-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background-color: var(--primary-blue);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 5px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: opacity 0.3s, transform 0.3s;
+    z-index: 1000;
+}
+
+.title-notification.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 /* loader css animation */
 .loader {
     width: 40px;
@@ -229,5 +250,5 @@
     background: radial-gradient(circle closest-side,#000 90%,#0000) 0/calc(100%/3) 100% space;
     clip-path: inset(0 100% 0 0);
     animation: l1 1.5s steps(4) infinite;
-  }
-  @keyframes l1 {to{clip-path: inset(0 -34% 0 0)}}
+}
+@keyframes l1 {to{clip-path: inset(0 -34% 0 0)}}
