@@ -1,4 +1,4 @@
-const API_KEY = "AIzaSyAKwYcTuFbGXgprfJx_OG6MyotzxI5jTto"; // Replace with actual API Key
+const API_KEY = "Gemini-Api key"; // Replace with actual API Key
 import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
 const businessInfo = `
