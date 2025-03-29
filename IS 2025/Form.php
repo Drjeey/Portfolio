@@ -151,7 +151,7 @@
         </div>
     </div>
 
-    <script>
+    <script defer>
         const loginForm = document.getElementById('loginForm');
         const signupForm = document.getElementById('signupForm');
         const showSignup = document.getElementById('showSignup');

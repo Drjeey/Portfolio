@@ -39,7 +39,7 @@
     </div>
     <!-- Notification container (will be populated by JavaScript) -->
     <div id="notification-container"></div>
-<script>
+<script defer>
     function checkLogin() {
             fetch("backend.php")
             .then(response => response.json())
