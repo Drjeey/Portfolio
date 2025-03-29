@@ -180,114 +180,7 @@
     align-items: flex-end;
 }
 
-.model p, .user p, .model ul, .model ol, .user ul, .user ol {
-    max-width: 70%;
-    padding: 12px 18px;
-    margin: 4px 0;
-    border-radius: 20px;
-    line-height: 1.5;
-}
-
-.model p, .model ul, .model ol {
-    background: var(--white);
-    margin-right: auto;
-    text-align: left;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-
-.user p, .user ul, .user ol {
-    background: var(--primary-blue);
-    color: var(--white);
-    margin-left: auto;
-    text-align: left;
-}
-
-/* Remove default bullets and padding from lists in messages */
-.chat-message ul, .chat-message ol {
-    list-style-position: inside;
-    padding-left: 10px;
-    width: 100%;
-    max-width: 70%;
-}
-
-.chat-message li {
-    margin-bottom: 8px;
-    line-height: 1.4;
-    text-align: left;
-    padding-left: 8px;
-}
-
-/* Fix for list items within model responses */
-.model ul, .model ol {
-    background-color: var(--white);
-    border-radius: 20px;
-    padding: 12px 18px;
-    margin-bottom: 10px;
-    width: fit-content;
-    max-width: 70%;
-}
-
-.user ul, .user ol {
-    background-color: var(--primary-blue);
-    border-radius: 20px;
-    padding: 12px 18px;
-    margin-bottom: 10px;
-    width: fit-content;
-    max-width: 70%;
-    color: var(--white);
-}
-
-/* Style for bullet points */
-.model ul {
-    list-style-type: disc;
-}
-
-.model ol {
-    list-style-type: decimal;
-}
-
-.user ul {
-    list-style-type: disc;
-}
-
-.user ol {
-    list-style-type: decimal;
-}
-
-/* Fix spacing between paragraphs and lists */
-.model p + ul, .model p + ol,
-.user p + ul, .user p + ol {
-    margin-top: 8px;
-}
-
-/* Ensure proper spacing after lists */
-.model ul + p, .model ol + p,
-.user ul + p, .user ol + p {
-    margin-top: 8px;
-}
-
-/* Quoted text styling */
-.chat-message .quoted-text {
-    font-style: italic;
-    color: inherit;
-    opacity: 0.9;
-}
-
-/* Links in messages */
-.chat-message a {
-    color: inherit;
-    text-decoration: underline;
-    text-underline-offset: 2px;
-}
-
-.model a {
-    color: var(--primary-blue);
-}
-
-.user a {
-    color: white;
-    text-decoration-color: rgba(255, 255, 255, 0.7);
-}
+/* Remove old link styles */
 
 .input-area {
     display: flex;
@@ -357,3 +250,154 @@
     animation: l1 1.5s steps(4) infinite;
 }
 @keyframes l1 {to{clip-path: inset(0 -34% 0 0)}}
+
+/* Message content styling (for Markdown) */
+.message-content {
+    max-width: 70%;
+    padding: 12px 18px;
+    margin: 4px 0;
+    border-radius: 20px;
+    line-height: 1.5;
+    width: fit-content;
+}
+
+.model .message-content {
+    background: var(--white);
+    margin-right: auto;
+    text-align: left;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+.user .message-content {
+    background: var(--primary-blue);
+    color: var(--white);
+    margin-left: auto;
+    text-align: left;
+}
+
+/* Model and user message containers */
+.model, .user {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+.model {
+    align-items: flex-start;
+}
+
+.user {
+    align-items: flex-end;
+}
+
+/* Properly style Markdown elements */
+.message-content p {
+    margin: 0 0 12px 0;
+}
+
+.message-content p:last-child {
+    margin-bottom: 0;
+}
+
+.message-content ul, .message-content ol {
+    margin: 8px 0;
+    padding-left: 20px;
+}
+
+.model .message-content ul, .model .message-content ol {
+    color: #000;
+}
+
+.user .message-content ul, .user .message-content ol {
+    color: #fff;
+}
+
+.message-content li {
+    margin-bottom: 5px;
+}
+
+.message-content li:last-child {
+    margin-bottom: 0;
+}
+
+.message-content pre {
+    background: rgba(0,0,0,0.05);
+    padding: 10px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 10px 0;
+}
+
+.user .message-content pre {
+    background: rgba(255,255,255,0.1);
+}
+
+.message-content code {
+    font-family: monospace;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.model .message-content code {
+    background: rgba(0,0,0,0.05);
+}
+
+.user .message-content code {
+    background: rgba(255,255,255,0.2);
+}
+
+.message-content blockquote {
+    border-left: 3px solid rgba(0,0,0,0.2);
+    padding-left: 10px;
+    margin: 10px 0;
+    color: rgba(0,0,0,0.7);
+}
+
+.user .message-content blockquote {
+    border-left: 3px solid rgba(255,255,255,0.4);
+    color: rgba(255,255,255,0.9);
+}
+
+.message-content h1, .message-content h2, .message-content h3,
+.message-content h4, .message-content h5, .message-content h6 {
+    margin: 16px 0 8px 0;
+    line-height: 1.2;
+}
+
+.message-content h1 { font-size: 1.6em; }
+.message-content h2 { font-size: 1.4em; }
+.message-content h3 { font-size: 1.2em; }
+.message-content h4 { font-size: 1.1em; }
+
+.message-content a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.model .message-content a {
+    color: var(--primary-blue);
+}
+
+.user .message-content a {
+    color: white;
+    text-decoration-color: rgba(255, 255, 255, 0.7);
+}
+
+.message-content ul {
+    list-style-type: disc;
+    list-style-position: outside;
+    padding-left: 25px;
+}
+
+.message-content ol {
+    list-style-type: decimal;
+    list-style-position: outside;
+    padding-left: 25px;
+}
+
+/* Fix list item indentation */
+.message-content li {
+    margin-left: 0;
+    padding-left: 5px;
+}

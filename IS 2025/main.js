@@ -69,13 +69,13 @@ async function checkLogin() {
                 });
             }
         } else {
-            // If no conversation loaded, ensure welcome message is personalized
-            const welcomeMessageElement = document.getElementById('welcome-message');
-            if (welcomeMessageElement) {
-                welcomeMessageElement.textContent = username !== 'User' 
-                    ? `Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?` 
-                    : `Hello! I'm your health information assistant. How can I help you with your health questions today?`;
-            }
+            // If no conversation loaded, ensure welcome message is personalized and properly formatted
+            const welcomeContainer = document.querySelector(".chat-messages");
+            const welcomeHtml = username !== 'User' 
+                ? `<div class="model"><div class="message-content"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>` 
+                : `<div class="model"><div class="message-content"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>`;
+            
+            welcomeContainer.innerHTML = welcomeHtml;
         }
     } catch (error) {
         console.error("Error checking login:", error);
@@ -95,7 +95,19 @@ async function loadConversations() {
             
             conversations.forEach(conversation => {
                 const dateObj = new Date(conversation.updated_at);
-                const formattedDate = formatDate(dateObj);
+                let formattedDate;
+                
+                // Format the date
+                const today = new Date();
+                if (dateObj.toDateString() === today.toDateString()) {
+                    formattedDate = "Today";
+                } else {
+                    formattedDate = dateObj.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric'
+                    });
+                }
                 
                 const conversationItem = document.createElement("div");
                 conversationItem.className = "conversation-item";
@@ -256,17 +268,40 @@ async function deleteConversation(conversationId) {
     }
 }
 
-// ✅ Add date separator to the chat UI
+// Add a date separator to the chat
 function addDateSeparator(dateStr) {
     const chatContainer = document.querySelector(".chat-messages");
-    const dateHeader = document.createElement("div");
-    dateHeader.className = "chat-date";
+    
+    // Check if we already have this date in the chat
+    if (document.querySelector(`.chat-date[data-date="${dateStr}"]`)) {
+        return;
+    }
     
     // Format the date
-    const formattedDate = formatDate(new Date(dateStr));
-    dateHeader.textContent = formattedDate;
+    const dateParts = dateStr.split('-');
+    const dateObj = new Date(dateParts[0], dateParts[1] - 1, dateParts[2]);
+    const today = new Date();
     
-    chatContainer.appendChild(dateHeader);
+    // Check if this is today
+    let displayDate;
+    if (dateObj.toDateString() === today.toDateString()) {
+        displayDate = "Today";
+    } else {
+        // Format as Month Day, Year
+        displayDate = dateObj.toLocaleDateString('en-US', {
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric'
+        });
+    }
+    
+    // Create date separator element that's not inside a message bubble
+    const dateDiv = document.createElement("div");
+    dateDiv.className = "chat-date";
+    dateDiv.setAttribute("data-date", dateStr);
+    dateDiv.textContent = displayDate;
+    
+    chatContainer.appendChild(dateDiv);
 }
 
 // ✅ Send message to AI model & save to database
@@ -519,6 +554,7 @@ async function updateConversationTitle(title, conversationId) {
     if (!title || !conversationId) return;
     
     try {
+        // First update in database
         const response = await fetch("backend.php", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -527,15 +563,27 @@ async function updateConversationTitle(title, conversationId) {
         
         const data = await response.json();
         if (data.success) {
-            // Update current title and refresh conversation list
-            if (conversationId === currentConversationId) {
-                currentConversationTitle = title;
+            // Update the title in the conversation list
+            const titleElements = document.querySelectorAll(`.conversation-item .rename-btn[data-id="${conversationId}"]`);
+            if (titleElements.length > 0) {
+                titleElements.forEach(el => {
+                    const titleElement = el.closest('.conversation-item').querySelector('.conversation-title');
+                    if (titleElement) {
+                        titleElement.textContent = title;
+                    }
+                });
+                
+                // Update the current conversation title if this is the active conversation
+                if (currentConversationId === conversationId) {
+                    currentConversationTitle = title;
+                    
+                    // Update document title
+                    document.title = `${title} - AI Assistant`;
+                    
+                    // Show notification of title change
+                    showTitleNotification(title);
+                }
             }
-            
-            // Show title update notification
-            showTitleNotification(title);
-            
-            loadConversations();
         }
     } catch (error) {
         console.error("Error updating conversation title:", error);
@@ -611,11 +659,40 @@ function addMessageToUI(sender, message) {
     const messageDiv = document.createElement("div");
     messageDiv.className = sender;
     
-    // Process and format the message content
-    let formattedMessage = formatMessage(message);
+    // Use marked.js to parse markdown
+    // Configure marked options
+    marked.setOptions({
+        gfm: true, // GitHub Flavored Markdown
+        breaks: true, // Interpret line breaks as <br>
+        sanitize: false, // Allow HTML
+        smartLists: true,
+        smartypants: true
+    });
     
-    // Add the formatted message to the div
-    messageDiv.innerHTML = formattedMessage;
+    // Container for the formatted message
+    const contentContainer = document.createElement("div");
+    contentContainer.className = "message-content";
+    
+    try {
+        // Parse the markdown
+        const formattedMessage = marked.parse(message);
+        contentContainer.innerHTML = formattedMessage;
+        
+        // Make links open in new tab
+        const links = contentContainer.querySelectorAll('a');
+        links.forEach(link => {
+            link.setAttribute('target', '_blank');
+            link.setAttribute('rel', 'noopener noreferrer');
+        });
+        
+        // Add the message content container to the message div
+        messageDiv.appendChild(contentContainer);
+    } catch (error) {
+        console.error("Error parsing markdown:", error);
+        // Fallback to simple formatting
+        contentContainer.innerHTML = `<p>${message.replace(/\n/g, '<br>')}</p>`;
+        messageDiv.appendChild(contentContainer);
+    }
     
     // Add the message to the chat container
     const chatContainer = document.querySelector(".chat-messages");
@@ -623,100 +700,6 @@ function addMessageToUI(sender, message) {
     
     // Scroll to the bottom
     chatContainer.scrollTop = chatContainer.scrollHeight;
-}
-
-// Format message with proper paragraph breaks and list items
-function formatMessage(message) {
-    if (!message) return '';
-    
-    // First check if the entire message is a list
-    const linesWithBullets = message.split('\n').filter(line => line.trim().startsWith('* ') || line.trim().match(/^\d+\.\s/));
-    const isEntireMessageList = linesWithBullets.length > 0 && 
-                               linesWithBullets.length === message.split('\n').filter(line => line.trim() !== '').length;
-    
-    // If the entire message is a list, handle it specially
-    if (isEntireMessageList) {
-        const lines = message.split('\n').filter(line => line.trim() !== '');
-        
-        // Check if it's a numbered list
-        const isNumberedList = lines[0].trim().match(/^\d+\.\s/);
-        
-        const listTag = isNumberedList ? 'ol' : 'ul';
-        let listContent = `<${listTag}>`;
-        
-        lines.forEach(line => {
-            // Clean up the line to remove the bullet or number
-            const cleanedLine = line.trim().replace(/^(\*|\d+\.)\s+/, '');
-            listContent += `<li>${cleanedLine}</li>`;
-        });
-        
-        listContent += `</${listTag}>`;
-        return listContent;
-    }
-    
-    // For mixed content, process with regular approach
-    
-    // Handle bullet points with asterisks
-    let formatted = message.replace(/\n\*\s+(.*?)(?=\n\*\s+|\n\n|$)/gs, '</p><ul><li>$1</li></ul><p>');
-    
-    // Handle consecutive bullet points properly
-    formatted = formatted.replace(/<\/ul><p>\*\s+(.*?)(?=\n\*\s+|\n\n|$)/gs, '<ul><li>$1</li></ul><p>');
-    formatted = formatted.replace(/<\/ul><p><ul>/g, '');
-    
-    // Fix isolated bullet points
-    formatted = formatted.replace(/\n\*\s+(.*?)(?=\n[^*]|$)/gs, '</p><ul><li>$1</li></ul><p>');
-    
-    // Handle numbered lists
-    formatted = formatted.replace(/\n\d+\.\s+(.*?)(?=\n\d+\.\s+|\n\n|$)/gs, '</p><ol><li>$1</li></ol><p>');
-    
-    // Handle consecutive numbered points properly
-    formatted = formatted.replace(/<\/ol><p>\d+\.\s+(.*?)(?=\n\d+\.\s+|\n\n|$)/gs, '<ol><li>$1</li></ol><p>');
-    formatted = formatted.replace(/<\/ol><p><ol>/g, '');
-    
-    // Handle paragraph breaks
-    formatted = formatted.replace(/\n\s*\n/g, '</p><p>');
-    
-    // Handle single line breaks
-    formatted = formatted.replace(/\n/g, '<br>');
-    
-    // Wrap in paragraph tags if not already
-    if (!formatted.startsWith('<p>') && !formatted.startsWith('<ul>') && !formatted.startsWith('<ol>')) {
-        formatted = '<p>' + formatted;
-    }
-    if (!formatted.endsWith('</p>') && !formatted.endsWith('</ul>') && !formatted.endsWith('</ol>')) {
-        formatted = formatted + '</p>';
-    }
-    
-    // Clean up any empty paragraphs
-    formatted = formatted.replace(/<p>\s*<\/p>/g, '');
-    
-    // Better handling for bullet points at beginning of text
-    if (formatted.startsWith('<p>* ')) {
-        formatted = formatted.replace(/^<p>\*\s+(.+?)(?=<\/p>|<br>)/s, '<ul><li>$1</li></ul>');
-    }
-    
-    // Fix any unclosed list items
-    formatted = formatted.replace(/<li>(.*?)(?=<p>|$)/gs, '<li>$1</li>');
-    
-    // Make sure lists are properly nested in paragraphs
-    formatted = formatted.replace(/<p>(.*?)<ul>/gs, '<p>$1</p><ul>');
-    formatted = formatted.replace(/<\/ul>(.*?)<\/p>/gs, '</ul><p>$1</p>');
-    
-    formatted = formatted.replace(/<p>(.*?)<ol>/gs, '<p>$1</p><ol>');
-    formatted = formatted.replace(/<\/ol>(.*?)<\/p>/gs, '</ol><p>$1</p>');
-    
-    // Make any URLs clickable
-    formatted = formatted.replace(
-        /(https?:\/\/[^\s]+)/g, 
-        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
-    );
-    
-    // Final cleanup of empty tags
-    formatted = formatted.replace(/<p><\/p>/g, '');
-    formatted = formatted.replace(/<ul><\/ul>/g, '');
-    formatted = formatted.replace(/<ol><\/ol>/g, '');
-    
-    return formatted;
 }
 
 // ✅ Start a new conversation (Clears UI but keeps history in DB)
@@ -746,8 +729,8 @@ async function startNewConversation() {
             
             // Personalized welcome message using the username, focused on health
             const welcomeMessage = username !== 'User' 
-                ? `<div class="model"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div>` 
-                : `<div class="model"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div>`;
+                ? `<div class="model"><div class="message-content"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>` 
+                : `<div class="model"><div class="message-content"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>`;
             
             // Clear chat UI and add welcome message
             document.querySelector(".chat-messages").innerHTML = welcomeMessage;
@@ -761,25 +744,6 @@ async function startNewConversation() {
         }
     } catch (error) {
         console.error("Error creating new conversation:", error);
-    }
-}
-
-// ✅ Format date helper
-function formatDate(date) {
-    const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    if (date.toDateString() === now.toDateString()) {
-        return "Today";
-    } else if (date.toDateString() === yesterday.toDateString()) {
-        return "Yesterday";
-    } else {
-        return date.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric' 
-        });
     }
 }
 
