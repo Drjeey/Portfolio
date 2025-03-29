@@ -605,93 +605,118 @@ async function saveChatToDatabase(userMessage, botResponse, summary = null) {
     }
 }
 
-// ✅ Add message to chat UI
+// ✅ Add a message to the chat UI
 function addMessageToUI(sender, message) {
-    const chatContainer = document.querySelector(".chat-messages");
+    // Create a new message element
     const messageDiv = document.createElement("div");
-    messageDiv.classList.add("chat-message", sender);
+    messageDiv.className = sender;
     
-    // Special handling for model responses, which may have complex formatting
-    if (sender === "model") {
-        // First, handle paragraphs by splitting on double newlines
-        const paragraphs = message.split(/\n\s*\n/);
-        
-        const formattedParagraphs = paragraphs.map(paragraph => {
-            // Format this individual paragraph
-            return formatParagraph(paragraph);
-        });
-        
-        // Join paragraphs with proper spacing
-        messageDiv.innerHTML = formattedParagraphs.join('<br><br>');
-    } else {
-        // For user messages, simple formatting is sufficient
-        let formattedMessage = message
-            .replace(/\n/g, '<br>')
-            .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
-            
-        messageDiv.innerHTML = `<p>${formattedMessage}</p>`;
-    }
+    // Process and format the message content
+    let formattedMessage = formatMessage(message);
     
+    // Add the formatted message to the div
+    messageDiv.innerHTML = formattedMessage;
+    
+    // Add the message to the chat container
+    const chatContainer = document.querySelector(".chat-messages");
     chatContainer.appendChild(messageDiv);
+    
+    // Scroll to the bottom
     chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// Helper function to format individual paragraphs with lists, quotes, etc.
-function formatParagraph(paragraph) {
-    // Check if this paragraph is a list
-    if (/^\s*(\d+\.\s|\*\s|-\s)/.test(paragraph)) {
-        return formatAsList(paragraph);
+// Format message with proper paragraph breaks and list items
+function formatMessage(message) {
+    if (!message) return '';
+    
+    // First check if the entire message is a list
+    const linesWithBullets = message.split('\n').filter(line => line.trim().startsWith('* ') || line.trim().match(/^\d+\.\s/));
+    const isEntireMessageList = linesWithBullets.length > 0 && 
+                               linesWithBullets.length === message.split('\n').filter(line => line.trim() !== '').length;
+    
+    // If the entire message is a list, handle it specially
+    if (isEntireMessageList) {
+        const lines = message.split('\n').filter(line => line.trim() !== '');
+        
+        // Check if it's a numbered list
+        const isNumberedList = lines[0].trim().match(/^\d+\.\s/);
+        
+        const listTag = isNumberedList ? 'ol' : 'ul';
+        let listContent = `<${listTag}>`;
+        
+        lines.forEach(line => {
+            // Clean up the line to remove the bullet or number
+            const cleanedLine = line.trim().replace(/^(\*|\d+\.)\s+/, '');
+            listContent += `<li>${cleanedLine}</li>`;
+        });
+        
+        listContent += `</${listTag}>`;
+        return listContent;
     }
     
-    // Regular paragraph formatting
-    let formatted = paragraph
-        // Convert URLs to clickable links
-        .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
-        
-        // Convert asterisk bullet points to list items
-        .replace(/^(\s*)\*\s(.+)$/gm, '<li>$2</li>')
-        
-        // Convert dash bullet points to list items
-        .replace(/^(\s*)-\s(.+)$/gm, '<li>$2</li>')
-        
-        // Convert numbered bullet points to list items
-        .replace(/^(\s*)\d+\.\s(.+)$/gm, '<li>$2</li>')
-        
-        // Convert newlines to breaks
-        .replace(/\n/g, '<br>');
+    // For mixed content, process with regular approach
     
-    // Handle quoted text
-    formatted = formatted.replace(/[""]([^""]+)[""]/g, '<span class="quoted-text">"$1"</span>');
+    // Handle bullet points with asterisks
+    let formatted = message.replace(/\n\*\s+(.*?)(?=\n\*\s+|\n\n|$)/gs, '</p><ul><li>$1</li></ul><p>');
     
-    // Wrap in paragraph if it doesn't contain list items
-    if (!formatted.includes('<li>')) {
-        formatted = `<p>${formatted}</p>`;
-    } else {
-        // If it has list items, wrap them in a ul
-        formatted = `<ul>${formatted}</ul>`;
+    // Handle consecutive bullet points properly
+    formatted = formatted.replace(/<\/ul><p>\*\s+(.*?)(?=\n\*\s+|\n\n|$)/gs, '<ul><li>$1</li></ul><p>');
+    formatted = formatted.replace(/<\/ul><p><ul>/g, '');
+    
+    // Fix isolated bullet points
+    formatted = formatted.replace(/\n\*\s+(.*?)(?=\n[^*]|$)/gs, '</p><ul><li>$1</li></ul><p>');
+    
+    // Handle numbered lists
+    formatted = formatted.replace(/\n\d+\.\s+(.*?)(?=\n\d+\.\s+|\n\n|$)/gs, '</p><ol><li>$1</li></ol><p>');
+    
+    // Handle consecutive numbered points properly
+    formatted = formatted.replace(/<\/ol><p>\d+\.\s+(.*?)(?=\n\d+\.\s+|\n\n|$)/gs, '<ol><li>$1</li></ol><p>');
+    formatted = formatted.replace(/<\/ol><p><ol>/g, '');
+    
+    // Handle paragraph breaks
+    formatted = formatted.replace(/\n\s*\n/g, '</p><p>');
+    
+    // Handle single line breaks
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Wrap in paragraph tags if not already
+    if (!formatted.startsWith('<p>') && !formatted.startsWith('<ul>') && !formatted.startsWith('<ol>')) {
+        formatted = '<p>' + formatted;
     }
+    if (!formatted.endsWith('</p>') && !formatted.endsWith('</ul>') && !formatted.endsWith('</ol>')) {
+        formatted = formatted + '</p>';
+    }
+    
+    // Clean up any empty paragraphs
+    formatted = formatted.replace(/<p>\s*<\/p>/g, '');
+    
+    // Better handling for bullet points at beginning of text
+    if (formatted.startsWith('<p>* ')) {
+        formatted = formatted.replace(/^<p>\*\s+(.+?)(?=<\/p>|<br>)/s, '<ul><li>$1</li></ul>');
+    }
+    
+    // Fix any unclosed list items
+    formatted = formatted.replace(/<li>(.*?)(?=<p>|$)/gs, '<li>$1</li>');
+    
+    // Make sure lists are properly nested in paragraphs
+    formatted = formatted.replace(/<p>(.*?)<ul>/gs, '<p>$1</p><ul>');
+    formatted = formatted.replace(/<\/ul>(.*?)<\/p>/gs, '</ul><p>$1</p>');
+    
+    formatted = formatted.replace(/<p>(.*?)<ol>/gs, '<p>$1</p><ol>');
+    formatted = formatted.replace(/<\/ol>(.*?)<\/p>/gs, '</ol><p>$1</p>');
+    
+    // Make any URLs clickable
+    formatted = formatted.replace(
+        /(https?:\/\/[^\s]+)/g, 
+        '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+    
+    // Final cleanup of empty tags
+    formatted = formatted.replace(/<p><\/p>/g, '');
+    formatted = formatted.replace(/<ul><\/ul>/g, '');
+    formatted = formatted.replace(/<ol><\/ol>/g, '');
     
     return formatted;
-}
-
-// Helper function to format text as a list
-function formatAsList(text) {
-    // Split into lines
-    const lines = text.split('\n');
-    
-    // Check if this is a numbered or bullet list
-    const isNumbered = /^\s*\d+\./.test(lines[0]);
-    
-    // Format each line as a list item
-    const listItems = lines.map(line => {
-        // Remove the bullet/number prefix and convert to list item
-        return `<li>${line.replace(/^\s*(\d+\.\s|\*\s|-\s)/, '')}</li>`;
-    });
-    
-    // Join and wrap in the appropriate list type
-    return isNumbered ? 
-        `<ol>${listItems.join('')}</ol>` : 
-        `<ul>${listItems.join('')}</ul>`;
 }
 
 // ✅ Start a new conversation (Clears UI but keeps history in DB)
