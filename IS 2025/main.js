@@ -16,6 +16,11 @@ const model = genAI.getGenerativeModel({
 document.addEventListener("DOMContentLoaded", async () => {
     await checkLogin(); // Ensure only logged-in users access this page
     loadChatHistory(); // Load chat history for the logged-in user
+    
+    // Call fetchChatHistory separately in case loadChatHistory fails
+    if (document.querySelector(".history-items").children.length === 0) {
+        fetchChatHistory();
+    }
 
     document.querySelector(".send-btn").addEventListener("click", sendMessage);
     document.querySelector(".message-input").addEventListener("keypress", (e) => {
@@ -48,17 +53,26 @@ async function loadChatHistory() {
         const chatContainer = document.querySelector(".chat-messages");
         chatContainer.innerHTML = ""; // Clear previous messages
 
-        for (const date in chatData) {
-            const dateHeader = document.createElement("div");
-            dateHeader.classList.add("chat-date");
-            dateHeader.textContent = date;
-            chatContainer.appendChild(dateHeader);
-
-            chatData[date].forEach(({ user, bot }) => {
-                addMessageToUI("user", user);
-                addMessageToUI("model", bot);
-            });
+        // Add default welcome message if no history
+        if (Object.keys(chatData).length === 0) {
+            const modelDiv = document.createElement("div");
+            modelDiv.classList.add("model");
+            modelDiv.innerHTML = "<p>Hi, how can I help you today?</p>";
+            chatContainer.appendChild(modelDiv);
+            return;
         }
+
+        // Add the most recent conversation to chat window
+        const latestDate = Object.keys(chatData)[0];
+        const latestChats = chatData[latestDate];
+        
+        latestChats.forEach(({ user, bot }) => {
+            addMessageToUI("user", user);
+            addMessageToUI("model", bot);
+        });
+        
+        // Also populate the history panel
+        fetchChatHistory(chatData);
     } catch (error) {
         console.error("Error loading chat history:", error);
     }
@@ -121,29 +135,91 @@ function addMessageToUI(sender, message) {
 }
 
 // ✅ Fetch and display chat history in a separate section
-function fetchChatHistory() {
-    fetch("backend.php")
-        .then(response => response.json())
-        .then(data => {
-            const historyContainer = document.querySelector(".history-items");
-            historyContainer.innerHTML = "";
+function fetchChatHistory(chatData = null) {
+    if (!chatData) {
+        fetch("backend.php")
+            .then(response => response.json())
+            .then(data => {
+                renderHistoryPanel(data);
+            })
+            .catch(error => console.error("Error fetching history:", error));
+    } else {
+        renderHistoryPanel(chatData);
+    }
+}
 
-            for (const [date, chats] of Object.entries(data)) {
-                const dayDiv = document.createElement("div");
-                dayDiv.className = "history-day";
-                dayDiv.innerHTML = `<h4>${date}</h4>`;
+function renderHistoryPanel(data) {
+    const historyContainer = document.querySelector(".history-items");
+    historyContainer.innerHTML = "";
 
-                chats.forEach(chat => {
-                    const chatItem = document.createElement("div");
-                    chatItem.className = "history-chat";
-                    chatItem.innerHTML = `<p><b>You:</b> ${chat.user}</p><p><b>AI:</b> ${chat.bot}</p>`;
-                    dayDiv.appendChild(chatItem);
-                });
+    for (const [date, chats] of Object.entries(data)) {
+        const dayDiv = document.createElement("div");
+        dayDiv.className = "history-day";
+        
+        // Format the date to be more readable
+        const formattedDate = formatDate(date);
+        dayDiv.innerHTML = `<h4>${formattedDate}</h4>`;
 
-                historyContainer.appendChild(dayDiv);
-            }
-        })
-        .catch(error => console.error("Error fetching history:", error));
+        // Show preview of first message in this day's chats
+        if (chats.length > 0) {
+            const previewItem = document.createElement("div");
+            previewItem.className = "history-chat";
+            
+            // Truncate message if too long
+            const userMsg = chats[0].user.length > 30 ? 
+                chats[0].user.substring(0, 27) + "..." : 
+                chats[0].user;
+                
+            previewItem.innerHTML = `<p>You: ${userMsg}</p>`;
+            
+            // Add click event to load this conversation
+            previewItem.addEventListener("click", () => {
+                loadSpecificConversation(date, chats);
+            });
+            
+            dayDiv.appendChild(previewItem);
+        }
+
+        historyContainer.appendChild(dayDiv);
+    }
+}
+
+// Format date from YYYY-MM-DD to a more readable format
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (date.toDateString() === today.toDateString()) {
+        return "Today";
+    } else if (date.toDateString() === yesterday.toDateString()) {
+        return "Yesterday";
+    } else {
+        return date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric' 
+        });
+    }
+}
+
+// Load a specific conversation when clicked from history
+function loadSpecificConversation(date, chats) {
+    const chatContainer = document.querySelector(".chat-messages");
+    chatContainer.innerHTML = ""; // Clear current chat
+    
+    // Add date header
+    const dateHeader = document.createElement("div");
+    dateHeader.classList.add("chat-date");
+    dateHeader.textContent = formatDate(date);
+    chatContainer.appendChild(dateHeader);
+    
+    // Add messages
+    chats.forEach(({ user, bot }) => {
+        addMessageToUI("user", user);
+        addMessageToUI("model", bot);
+    });
 }
 
 // ✅ Start a new conversation (Clears UI but keeps history in DB)
@@ -151,6 +227,9 @@ function startNewConversation() {
     document.querySelector(".chat-messages").innerHTML = `
         <div class="model"><p>Hi, how can I help you today?</p></div>
     `;
+    
+    // Refresh the chat history panel
+    fetchChatHistory();
 }
 
 // ✅ Show error message if AI fails

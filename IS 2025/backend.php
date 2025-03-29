@@ -2,15 +2,21 @@
 session_start(); // Start session for user authentication
 header("Content-Type: application/json"); // Ensure JSON response
 
-// Database connection
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "chatbot_system"; // Keeping original database name
+// Include database configuration
+require_once 'db_config.php';
 
-$conn = new mysqli($servername, $username, $password, $dbname);
-if ($conn->connect_error) {
-    echo json_encode(["success" => false, "error" => "Database connection failed: " . $conn->connect_error]);
+// Get database connection
+$conn = getDbConnection();
+if (!$conn) {
+    echo json_encode(["success" => false, "error" => "Database connection failed"]);
+    exit;
+}
+
+// Check if user is logged in for non-auth requests
+if (!isset($_SESSION['user_id']) && 
+    ($_SERVER['REQUEST_METHOD'] === 'GET' || 
+    ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])))) {
+    echo json_encode(["success" => false, "error" => "Unauthorized"]);
     exit;
 }
 
@@ -45,6 +51,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $stmt->bind_param("ss", $username, $hashed_password);
 
         if ($stmt->execute()) {
+            // Get the newly created user_id
+            $new_user_id = $conn->insert_id;
+            $_SESSION['user_id'] = $new_user_id;
+            $_SESSION['username'] = $username;
             echo json_encode(["success" => true, "message" => "Signup successful!"]);
         } else {
             echo json_encode(["success" => false, "error" => "Error signing up: " . $stmt->error]);
@@ -88,7 +98,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 }
 
 // Handle chat saving with date tracking
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !isset($_POST['action'])) {
     $user_id = $_SESSION['user_id'];
     $user_message = $_POST['user_message'] ?? '';
     $bot_message = $_POST['bot_message'] ?? '';
@@ -103,6 +113,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id'])) {
             echo json_encode(["success" => false, "error" => "Error saving message"]);
         }
         $stmt->close();
+    } else {
+        echo json_encode(["success" => false, "error" => "Both user and bot messages are required"]);
     }
     exit;
 }
@@ -110,7 +122,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id'])) {
 // Handle user-specific chat retrieval with grouping by date
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id'])) {
     $user_id = $_SESSION['user_id'];
-    $stmt = $conn->prepare("SELECT date, user_message, bot_message FROM chats WHERE user_id = ? ORDER BY date DESC");
+    // Order by date DESC and then by id DESC to ensure messages are in correct order
+    $stmt = $conn->prepare("SELECT date, user_message, bot_message FROM chats WHERE user_id = ? ORDER BY date DESC, id DESC");
     $stmt->bind_param("i", $user_id);
     $stmt->execute();
     $result = $stmt->get_result();

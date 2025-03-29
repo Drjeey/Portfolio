@@ -13,7 +13,9 @@
     <div class="container">
         <aside class="history-panel">
             <h3>Chat History</h3>
-            <div class="history-items"></div>
+            <div class="history-items">
+                <!-- Chat history will be populated by JavaScript -->
+            </div>
         </aside>
         
         <section class="chat-window">

@@ -1,16 +1,13 @@
 <?php
 session_start();
 
-// Database connection
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "form";
+// Include database configuration
+require_once 'db_config.php';
 
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    die("Connection failed: " . $conn->connect_error);
+// Get database connection
+$conn = getDbConnection();
+if (!$conn) {
+    die("Database connection failed. Please try again later.");
 }
 
 // Handle logout
@@ -32,12 +29,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     if ($form_type == "signup") {
+        // Check if username exists
+        $check_stmt = $conn->prepare("SELECT id FROM users WHERE username = ?");
+        $check_stmt->bind_param("s", $username);
+        $check_stmt->execute();
+        $check_stmt->store_result();
+        
+        if ($check_stmt->num_rows > 0) {
+            echo "Username already exists. Please choose another username.";
+            $check_stmt->close();
+            exit;
+        }
+        $check_stmt->close();
+        
+        // Insert new user
         $stmt = $conn->prepare("INSERT INTO users (username, password) VALUES (?, ?)");
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
         $stmt->bind_param("ss", $username, $hashed_password);
 
         if ($stmt->execute()) {
-            echo "Signup successful!";
+            // Get the newly created user_id
+            $user_id = $conn->insert_id;
+            $_SESSION['user_id'] = $user_id;
+            $_SESSION['username'] = $username;
+            header("Location: index.php");
+            exit;
         } else {
             echo "Error: " . $stmt->error;
         }

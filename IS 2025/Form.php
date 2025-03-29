@@ -95,22 +95,36 @@
         .toggle-form a:hover {
             text-decoration: underline;
         }
+        
+        .error-message {
+            color: #e74c3c;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        .success-message {
+            color: #27ae60;
+            text-align: center;
+            margin-top: 10px;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="form-container">
             <!-- Login Form -->
-            <form class="form" id="loginForm" action="process_form.php" method="POST">
+            <form class="form" id="loginForm">
                 <h1>Login</h1>
-                <input type="hidden" name="form_type" value="login">
                 <div class="input-group">
-                    <input type="text" name="username" placeholder="Username" required>
+                    <input type="text" name="username" id="login-username" placeholder="Username" required>
                 </div>
                 <div class="input-group">
-                    <input type="password" name="password" placeholder="Password" required>
+                    <input type="password" name="password" id="login-password" placeholder="Password" required>
                 </div>
                 <button type="submit">Login</button>
+                <div class="error-message" id="login-error"></div>
                 <div class="toggle-form">
                     <span>Don't have an account? </span>
                     <a id="showSignup">Sign Up</a>
@@ -118,16 +132,17 @@
             </form>
 
             <!-- Signup Form -->
-            <form class="form hidden" id="signupForm" action="process_form.php" method="POST">
+            <form class="form hidden" id="signupForm">
                 <h1>Sign Up</h1>
-                <input type="hidden" name="form_type" value="signup">
                 <div class="input-group">
-                    <input type="text" name="username" placeholder="Username" required>
+                    <input type="text" name="username" id="signup-username" placeholder="Username" required>
                 </div>
                 <div class="input-group">
-                    <input type="password" name="password" placeholder="Password" required>
+                    <input type="password" name="password" id="signup-password" placeholder="Password" required>
                 </div>
                 <button type="submit">Sign Up</button>
+                <div class="error-message" id="signup-error"></div>
+                <div class="success-message" id="signup-success"></div>
                 <div class="toggle-form">
                     <span>Already have an account? </span>
                     <a id="showLogin">Login</a>
@@ -141,37 +156,103 @@
         const signupForm = document.getElementById('signupForm');
         const showSignup = document.getElementById('showSignup');
         const showLogin = document.getElementById('showLogin');
+        
+        const loginError = document.getElementById('login-error');
+        const signupError = document.getElementById('signup-error');
+        const signupSuccess = document.getElementById('signup-success');
 
         showSignup.addEventListener('click', () => {
             loginForm.classList.add('hidden');
             signupForm.classList.remove('hidden');
+            // Clear any error messages
+            loginError.textContent = '';
+            signupError.textContent = '';
+            signupSuccess.textContent = '';
         });
 
         showLogin.addEventListener('click', () => {
             signupForm.classList.add('hidden');
             loginForm.classList.remove('hidden');
+            // Clear any error messages
+            loginError.textContent = '';
+            signupError.textContent = '';
+            signupSuccess.textContent = '';
         });
 
-        // Form validation
-        document.querySelectorAll('form').forEach(form => {
-            form.addEventListener('submit', (e) => {
-                e.preventDefault();
-                const inputs = form.querySelectorAll('input');
-                let isValid = true;
-
-                inputs.forEach(input => {
-                    if (!input.value.trim()) {
-                        isValid = false;
-                    }
+        // Handle login form submission
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value.trim();
+            
+            if (!username || !password) {
+                loginError.textContent = 'Please fill in all fields';
+                return;
+            }
+            
+            try {
+                const response = await fetch('backend.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
                 });
-
-                if (!isValid) {
-                    alert('Please fill in all fields');
-                    return;
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    window.location.href = 'index.php';
+                } else {
+                    loginError.textContent = data.error || 'Login failed';
                 }
-
-                form.submit();
-            });
+            } catch (error) {
+                loginError.textContent = 'An error occurred. Please try again.';
+                console.error('Login error:', error);
+            }
+        });
+        
+        // Handle signup form submission
+        signupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('signup-username').value.trim();
+            const password = document.getElementById('signup-password').value.trim();
+            
+            if (!username || !password) {
+                signupError.textContent = 'Please fill in all fields';
+                return;
+            }
+            
+            try {
+                const response = await fetch('backend.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `action=signup&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    signupSuccess.textContent = 'Signup successful! Redirecting...';
+                    signupError.textContent = '';
+                    
+                    // Redirect to index.php after a short delay
+                    setTimeout(() => {
+                        window.location.href = 'index.php';
+                    }, 1500);
+                } else {
+                    signupError.textContent = data.error || 'Signup failed';
+                    signupSuccess.textContent = '';
+                }
+            } catch (error) {
+                signupError.textContent = 'An error occurred. Please try again.';
+                signupSuccess.textContent = '';
+                console.error('Signup error:', error);
+            }
         });
     </script>
 </body>
