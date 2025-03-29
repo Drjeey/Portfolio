@@ -9,19 +9,18 @@ const businessInfo = `
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash", 
+    model: "gemini-2.0-flash", 
     systemInstruction: businessInfo
 });
 
+// Global variables for tracking current conversation
+let currentConversationId = null;
+let currentConversationTitle = "New Conversation";
+
 document.addEventListener("DOMContentLoaded", async () => {
     await checkLogin(); // Ensure only logged-in users access this page
-    loadChatHistory(); // Load chat history for the logged-in user
+    loadConversations(); // Load conversation list
     
-    // Call fetchChatHistory separately in case loadChatHistory fails
-    if (document.querySelector(".history-items").children.length === 0) {
-        fetchChatHistory();
-    }
-
     document.querySelector(".send-btn").addEventListener("click", sendMessage);
     document.querySelector(".message-input").addEventListener("keypress", (e) => {
         if (e.key === "Enter") sendMessage();
@@ -30,52 +29,208 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.querySelector(".new-chat-btn").addEventListener("click", startNewConversation);
 });
 
-
 // ✅ Check if the user is logged in, redirect if not
 async function checkLogin() {
     try {
         const response = await fetch("backend.php");
         const data = await response.json();
-        if (data.success === false && data.error === "Unauthorized") {
-            window.location.href = "Form.html";
+        if (!data.success) {
+            window.location.href = "Form.php";
+        } else if (data.conversation_id) {
+            // Set the current conversation
+            currentConversationId = data.conversation_id;
+            currentConversationTitle = data.title;
+            
+            // Load the messages for this conversation
+            const chatContainer = document.querySelector(".chat-messages");
+            chatContainer.innerHTML = ""; // Clear previous messages
+            
+            for (const date in data.messages) {
+                addDateSeparator(date);
+                data.messages[date].forEach(({ user, bot }) => {
+                    addMessageToUI("user", user);
+                    addMessageToUI("model", bot);
+                });
+            }
         }
     } catch {
-        window.location.href = "Form.html";
+        window.location.href = "Form.php";
     }
 }
 
-// ✅ Load user-specific chat history
-async function loadChatHistory() {
+// ✅ Load conversations for the sidebar
+async function loadConversations() {
     try {
-        const response = await fetch("backend.php");
-        const chatData = await response.json();
-
-        const chatContainer = document.querySelector(".chat-messages");
-        chatContainer.innerHTML = ""; // Clear previous messages
-
-        // Add default welcome message if no history
-        if (Object.keys(chatData).length === 0) {
-            const modelDiv = document.createElement("div");
-            modelDiv.classList.add("model");
-            modelDiv.innerHTML = "<p>Hi, how can I help you today?</p>";
-            chatContainer.appendChild(modelDiv);
-            return;
-        }
-
-        // Add the most recent conversation to chat window
-        const latestDate = Object.keys(chatData)[0];
-        const latestChats = chatData[latestDate];
+        const response = await fetch("backend.php?list=conversations");
+        const { success, conversations } = await response.json();
         
-        latestChats.forEach(({ user, bot }) => {
-            addMessageToUI("user", user);
-            addMessageToUI("model", bot);
+        if (success && conversations) {
+            const historyContainer = document.querySelector(".history-items");
+            historyContainer.innerHTML = ""; // Clear previous history
+            
+            conversations.forEach(conversation => {
+                const dateObj = new Date(conversation.updated_at);
+                const formattedDate = formatDate(dateObj);
+                
+                const conversationItem = document.createElement("div");
+                conversationItem.className = "conversation-item";
+                if (conversation.id === currentConversationId) {
+                    conversationItem.classList.add("active");
+                }
+                
+                conversationItem.innerHTML = `
+                    <div class="conversation-title">${conversation.title}</div>
+                    <div class="conversation-date">${formattedDate}</div>
+                    <div class="conversation-actions">
+                        <button class="rename-btn" data-id="${conversation.id}" title="Rename">✏️</button>
+                        <button class="delete-btn" data-id="${conversation.id}" title="Delete">🗑️</button>
+                    </div>
+                `;
+                
+                // Add click event to load this conversation
+                conversationItem.addEventListener("click", (e) => {
+                    // Ignore clicks on the action buttons
+                    if (e.target.classList.contains("rename-btn") || 
+                        e.target.classList.contains("delete-btn")) {
+                        return;
+                    }
+                    loadConversation(conversation.id);
+                });
+                
+                historyContainer.appendChild(conversationItem);
+            });
+            
+            // Add event listeners for conversation actions
+            document.querySelectorAll(".rename-btn").forEach(btn => {
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    renameConversation(btn.dataset.id);
+                });
+            });
+            
+            document.querySelectorAll(".delete-btn").forEach(btn => {
+                btn.addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    deleteConversation(btn.dataset.id);
+                });
+            });
+        }
+    } catch (error) {
+        console.error("Error loading conversations:", error);
+    }
+}
+
+// ✅ Load a specific conversation
+async function loadConversation(conversationId) {
+    try {
+        const response = await fetch(`backend.php?conversation_id=${conversationId}`);
+        const data = await response.json();
+        
+        if (data.success && data.messages) {
+            // Clear chat area
+            const chatContainer = document.querySelector(".chat-messages");
+            chatContainer.innerHTML = "";
+            
+            // Set current conversation
+            currentConversationId = conversationId;
+            
+            // Group messages by date
+            const messagesByDate = {};
+            data.messages.forEach(message => {
+                const dateStr = message.date.split(' ')[0]; // Get just the date part
+                if (!messagesByDate[dateStr]) {
+                    messagesByDate[dateStr] = [];
+                }
+                messagesByDate[dateStr].push(message);
+            });
+            
+            // Add messages grouped by date
+            for (const date in messagesByDate) {
+                addDateSeparator(date);
+                messagesByDate[date].forEach(message => {
+                    addMessageToUI("user", message.user_message);
+                    addMessageToUI("model", message.bot_message);
+                });
+            }
+            
+            // Scroll to bottom
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            
+            // Update active conversation in sidebar
+            document.querySelectorAll(".conversation-item").forEach(item => {
+                item.classList.remove("active");
+                if (item.querySelector(`.rename-btn[data-id="${conversationId}"]`)) {
+                    item.classList.add("active");
+                }
+            });
+        }
+    } catch (error) {
+        console.error("Error loading conversation:", error);
+    }
+}
+
+// ✅ Rename a conversation
+async function renameConversation(conversationId) {
+    const newTitle = prompt("Enter a new title for this conversation:");
+    if (!newTitle || newTitle.trim() === "") return;
+    
+    try {
+        const response = await fetch("backend.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `action=rename_conversation&conversation_id=${conversationId}&title=${encodeURIComponent(newTitle.trim())}`
         });
         
-        // Also populate the history panel
-        fetchChatHistory(chatData);
+        const data = await response.json();
+        if (data.success) {
+            loadConversations(); // Refresh the conversation list
+            if (conversationId === currentConversationId) {
+                currentConversationTitle = newTitle.trim();
+            }
+        }
     } catch (error) {
-        console.error("Error loading chat history:", error);
+        console.error("Error renaming conversation:", error);
     }
+}
+
+// ✅ Delete a conversation
+async function deleteConversation(conversationId) {
+    if (!confirm("Are you sure you want to delete this conversation? This cannot be undone.")) {
+        return;
+    }
+    
+    try {
+        const response = await fetch("backend.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `action=delete_conversation&conversation_id=${conversationId}`
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            if (conversationId === currentConversationId) {
+                // We deleted the current conversation, so start a new one
+                startNewConversation();
+            } else {
+                loadConversations(); // Just refresh the conversation list
+            }
+        }
+    } catch (error) {
+        console.error("Error deleting conversation:", error);
+    }
+}
+
+// ✅ Add date separator to the chat UI
+function addDateSeparator(dateStr) {
+    const chatContainer = document.querySelector(".chat-messages");
+    const dateHeader = document.createElement("div");
+    dateHeader.className = "chat-date";
+    
+    // Format the date
+    const formattedDate = formatDate(new Date(dateStr));
+    dateHeader.textContent = formattedDate;
+    
+    chatContainer.appendChild(dateHeader);
 }
 
 // ✅ Send message to AI model & save to database
@@ -113,12 +268,30 @@ async function sendMessage() {
 // ✅ Save user message & AI response to the database
 async function saveChatToDatabase(userMessage, botResponse) {
     try {
+        const postData = new URLSearchParams({
+            user_message: userMessage,
+            bot_message: botResponse
+        });
+        
+        // Add conversation ID if we have one
+        if (currentConversationId) {
+            postData.append('conversation_id', currentConversationId);
+        }
+        
         const response = await fetch("backend.php", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `user_message=${encodeURIComponent(userMessage)}&bot_message=${encodeURIComponent(botResponse)}`
+            body: postData
         });
-        console.log("Chat saved:", await response.json());
+        
+        const data = await response.json();
+        if (data.success) {
+            // If this created a new conversation, update our current conversation ID
+            if (data.conversation_id && !currentConversationId) {
+                currentConversationId = data.conversation_id;
+                loadConversations(); // Refresh the conversation list
+            }
+        }
     } catch (error) {
         console.error("Error saving chat:", error);
     }
@@ -134,64 +307,42 @@ function addMessageToUI(sender, message) {
     chatContainer.scrollTop = chatContainer.scrollHeight;
 }
 
-// ✅ Fetch and display chat history in a separate section
-function fetchChatHistory(chatData = null) {
-    if (!chatData) {
-        fetch("backend.php")
-            .then(response => response.json())
-            .then(data => {
-                renderHistoryPanel(data);
-            })
-            .catch(error => console.error("Error fetching history:", error));
-    } else {
-        renderHistoryPanel(chatData);
-    }
-}
-
-function renderHistoryPanel(data) {
-    const historyContainer = document.querySelector(".history-items");
-    historyContainer.innerHTML = "";
-
-    for (const [date, chats] of Object.entries(data)) {
-        const dayDiv = document.createElement("div");
-        dayDiv.className = "history-day";
+// ✅ Start a new conversation (Clears UI but keeps history in DB)
+async function startNewConversation() {
+    try {
+        // Create a new conversation in the database
+        const response = await fetch("backend.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `action=new_conversation&title=New Conversation`
+        });
         
-        // Format the date to be more readable
-        const formattedDate = formatDate(date);
-        dayDiv.innerHTML = `<h4>${formattedDate}</h4>`;
-
-        // Show preview of first message in this day's chats
-        if (chats.length > 0) {
-            const previewItem = document.createElement("div");
-            previewItem.className = "history-chat";
+        const data = await response.json();
+        if (data.success) {
+            // Update current conversation
+            currentConversationId = data.conversation_id;
+            currentConversationTitle = data.title;
             
-            // Truncate message if too long
-            const userMsg = chats[0].user.length > 30 ? 
-                chats[0].user.substring(0, 27) + "..." : 
-                chats[0].user;
-                
-            previewItem.innerHTML = `<p>You: ${userMsg}</p>`;
+            // Clear chat UI
+            document.querySelector(".chat-messages").innerHTML = `
+                <div class="model"><p>Hi, how can I help you today?</p></div>
+            `;
             
-            // Add click event to load this conversation
-            previewItem.addEventListener("click", () => {
-                loadSpecificConversation(date, chats);
-            });
-            
-            dayDiv.appendChild(previewItem);
+            // Refresh conversation list
+            loadConversations();
         }
-
-        historyContainer.appendChild(dayDiv);
+    } catch (error) {
+        console.error("Error creating new conversation:", error);
     }
 }
 
-// Format date from YYYY-MM-DD to a more readable format
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
+// ✅ Format date helper
+function formatDate(date) {
+    const now = new Date();
+    const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     
-    if (date.toDateString() === today.toDateString()) {
+    if (date.toDateString() === now.toDateString()) {
         return "Today";
     } else if (date.toDateString() === yesterday.toDateString()) {
         return "Yesterday";
@@ -202,34 +353,6 @@ function formatDate(dateString) {
             day: 'numeric' 
         });
     }
-}
-
-// Load a specific conversation when clicked from history
-function loadSpecificConversation(date, chats) {
-    const chatContainer = document.querySelector(".chat-messages");
-    chatContainer.innerHTML = ""; // Clear current chat
-    
-    // Add date header
-    const dateHeader = document.createElement("div");
-    dateHeader.classList.add("chat-date");
-    dateHeader.textContent = formatDate(date);
-    chatContainer.appendChild(dateHeader);
-    
-    // Add messages
-    chats.forEach(({ user, bot }) => {
-        addMessageToUI("user", user);
-        addMessageToUI("model", bot);
-    });
-}
-
-// ✅ Start a new conversation (Clears UI but keeps history in DB)
-function startNewConversation() {
-    document.querySelector(".chat-messages").innerHTML = `
-        <div class="model"><p>Hi, how can I help you today?</p></div>
-    `;
-    
-    // Refresh the chat history panel
-    fetchChatHistory();
 }
 
 // ✅ Show error message if AI fails
