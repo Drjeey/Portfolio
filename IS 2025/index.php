@@ -8,15 +8,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <!-- Add Marked.js for proper Markdown parsing -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- Load environment variables -->
-    <script>
-        <?php include 'env.php'; ?>
-        
-        // Convert PHP array to JavaScript object
-        const ENV = <?php echo json_encode($env); ?>;
-    </script>
 </head>
 <body onload="checkLogin()">
     <div class="container">
@@ -35,9 +26,7 @@
             </div>
             <div class="chat-messages">
                 <div class="model">
-                    <div class="message-content">
-                        <p id="welcome-message">Welcome to the chat!</p>
-                    </div>
+                    <p id="welcome-message">Welcome to the chat!</p>
                 </div>
             </div>
             <div class="input-area">
@@ -64,6 +53,8 @@
 </script>
     <!-- Load environment variables first -->
     <script src="env.php"></script>
+    <!-- Load Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- Then load the main application code -->
     <script type="module" src="main.js"></script>
 </body>

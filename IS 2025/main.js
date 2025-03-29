@@ -69,13 +69,13 @@ async function checkLogin() {
                 });
             }
         } else {
-            // If no conversation loaded, ensure welcome message is personalized and properly formatted
-            const welcomeContainer = document.querySelector(".chat-messages");
-            const welcomeHtml = username !== 'User' 
-                ? `<div class="model"><div class="message-content"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>` 
-                : `<div class="model"><div class="message-content"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>`;
-            
-            welcomeContainer.innerHTML = welcomeHtml;
+            // If no conversation loaded, ensure welcome message is personalized
+            const welcomeMessageElement = document.getElementById('welcome-message');
+            if (welcomeMessageElement) {
+                welcomeMessageElement.textContent = username !== 'User' 
+                    ? `Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?` 
+                    : `Hello! I'm your health information assistant. How can I help you with your health questions today?`;
+            }
         }
     } catch (error) {
         console.error("Error checking login:", error);
@@ -659,39 +659,32 @@ function addMessageToUI(sender, message) {
     const messageDiv = document.createElement("div");
     messageDiv.className = sender;
     
-    // Use marked.js to parse markdown
-    // Configure marked options
-    marked.setOptions({
-        gfm: true, // GitHub Flavored Markdown
-        breaks: true, // Interpret line breaks as <br>
-        sanitize: false, // Allow HTML
-        smartLists: true,
-        smartypants: true
-    });
-    
-    // Container for the formatted message
-    const contentContainer = document.createElement("div");
-    contentContainer.className = "message-content";
+    // Format message content using marked.js
+    let formattedContent;
     
     try {
-        // Parse the markdown
-        const formattedMessage = marked.parse(message);
-        contentContainer.innerHTML = formattedMessage;
-        
-        // Make links open in new tab
-        const links = contentContainer.querySelectorAll('a');
-        links.forEach(link => {
-            link.setAttribute('target', '_blank');
-            link.setAttribute('rel', 'noopener noreferrer');
+        // Configure marked options
+        marked.setOptions({
+            gfm: true, // GitHub Flavored Markdown
+            breaks: true, // Convert line breaks to <br>
+            sanitize: false, // Allow HTML
+            smartLists: true
         });
         
-        // Add the message content container to the message div
-        messageDiv.appendChild(contentContainer);
+        // Parse markdown
+        formattedContent = marked.parse(message);
     } catch (error) {
         console.error("Error parsing markdown:", error);
-        // Fallback to simple formatting
-        contentContainer.innerHTML = `<p>${message.replace(/\n/g, '<br>')}</p>`;
-        messageDiv.appendChild(contentContainer);
+        // Fallback to basic formatting
+        formattedContent = `<p>${message.replace(/\n/g, '<br>')}</p>`;
+    }
+    
+    // Use standard paragraph for user messages
+    if (sender === "user") {
+        messageDiv.innerHTML = `<p>${message}</p>`;
+    } else {
+        // For model responses, use marked to handle rich formatting
+        messageDiv.innerHTML = formattedContent;
     }
     
     // Add the message to the chat container
@@ -729,8 +722,8 @@ async function startNewConversation() {
             
             // Personalized welcome message using the username, focused on health
             const welcomeMessage = username !== 'User' 
-                ? `<div class="model"><div class="message-content"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>` 
-                : `<div class="model"><div class="message-content"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div></div>`;
+                ? `<div class="model"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div>` 
+                : `<div class="model"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div>`;
             
             // Clear chat UI and add welcome message
             document.querySelector(".chat-messages").innerHTML = welcomeMessage;
@@ -749,5 +742,11 @@ async function startNewConversation() {
 
 // ✅ Show error message if AI fails
 function showErrorMessage() {
-    addMessageToUI("model", "I apologize, but I'm having trouble processing your health question right now. Please try again or rephrase your question. Remember, for urgent medical concerns, please contact a healthcare professional directly.");
+    const messageDiv = document.createElement("div");
+    messageDiv.className = "model";
+    messageDiv.innerHTML = "<p>I apologize, but I'm having trouble processing your health question right now. Please try again or rephrase your question. Remember, for urgent medical concerns, please contact a healthcare professional directly.</p>";
+    
+    const chatContainer = document.querySelector(".chat-messages");
+    chatContainer.appendChild(messageDiv);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
 }

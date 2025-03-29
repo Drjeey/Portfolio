@@ -401,3 +401,31 @@
     margin-left: 0;
     padding-left: 5px;
 }
+
+/* Improve bullet point display */
+.model ul, .model ol {
+    margin-left: 20px;
+    padding-left: 20px;
+}
+
+.model li {
+    margin-bottom: 5px;
+}
+
+/* Make sure list items in the model output are properly shown */
+.model ul {
+    list-style-type: disc;
+}
+
+.model ol {
+    list-style-type: decimal;
+}
+
+/* Give paragraphs in AI responses good spacing */
+.model p {
+    margin-bottom: 8px;
+}
+
+.model p:last-child {
+    margin-bottom: 0;
+}
