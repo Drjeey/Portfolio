@@ -3,13 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login/Signup</title>
+    <title>NutriGuide | Login</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🥗</text></svg>">
     <style>
+        :root {
+            --primary-blue: #3d88f9;
+            --primary-green: #27ae60;
+            --light-green: #eafaf1;
+        }
+        
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-            font-family: Arial, sans-serif;
+            font-family: 'Raleway', sans-serif;
         }
 
         body {
@@ -18,14 +25,39 @@
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            background-image: linear-gradient(135deg, var(--light-green) 0%, #e9f9ff 100%);
         }
 
         .container {
             background-color: white;
             padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             width: 400px;
+        }
+        
+        .logo {
+            text-align: center;
+            margin-bottom: 1.5rem;
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary-green);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .logo-icon {
+            font-size: 32px;
+            margin-right: 8px;
+        }
+        
+        .tagline {
+            text-align: center;
+            margin-bottom: 2rem;
+            font-size: 14px;
+            color: #666;
+            font-style: italic;
         }
 
         .form-container {
@@ -46,6 +78,7 @@
             text-align: center;
             margin-bottom: 1.5rem;
             color: #1a1a1a;
+            font-size: 20px;
         }
 
         .input-group {
@@ -57,28 +90,30 @@
         input {
             padding: 12px;
             border: 1px solid #ddd;
-            border-radius: 4px;
+            border-radius: 8px;
             font-size: 16px;
         }
 
         input:focus {
             outline: none;
-            border-color: #1877f2;
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 2px rgba(39, 174, 96, 0.2);
         }
 
         button {
-            background-color: #1877f2;
+            background-color: var(--primary-green);
             color: white;
             padding: 12px;
             border: none;
-            border-radius: 4px;
+            border-radius: 8px;
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
+            transition: background-color 0.2s;
         }
 
         button:hover {
-            background-color: #166fe5;
+            background-color: #219653;
         }
 
         .toggle-form {
@@ -87,9 +122,10 @@
         }
 
         .toggle-form a {
-            color: #1877f2;
+            color: var(--primary-blue);
             text-decoration: none;
             cursor: pointer;
+            font-weight: bold;
         }
 
         .toggle-form a:hover {
@@ -104,19 +140,24 @@
         }
         
         .success-message {
-            color: #27ae60;
+            color: var(--primary-green);
             text-align: center;
             margin-top: 10px;
             font-size: 14px;
         }
     </style>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
+        <div class="logo">
+            <span class="logo-icon">🥗</span> NutriGuide
+        </div>
+        <div class="tagline">Your personal nutrition assistant powered by Nourish 1.0</div>
         <div class="form-container">
             <!-- Login Form -->
             <form class="form" id="loginForm">
-                <h1>Login</h1>
+                <h1>Welcome Back</h1>
                 <div class="input-group">
                     <input type="text" name="username" id="login-username" placeholder="Username" required>
                 </div>
@@ -133,7 +174,7 @@
 
             <!-- Signup Form -->
             <form class="form hidden" id="signupForm">
-                <h1>Sign Up</h1>
+                <h1>Create an Account</h1>
                 <div class="input-group">
                     <input type="text" name="username" id="signup-username" placeholder="Username" required>
                 </div>
@@ -200,7 +241,16 @@
                     body: `action=login&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
                 });
                 
-                const data = await response.json();
+                const responseText = await response.text();
+                let data;
+                
+                try {
+                    data = JSON.parse(responseText);
+                } catch (jsonError) {
+                    loginError.textContent = 'Server returned invalid response. Please try again later.';
+                    console.error('Login parsing error:', responseText);
+                    return;
+                }
                 
                 if (data.success) {
                     window.location.href = 'index.php';
@@ -234,7 +284,16 @@
                     body: `action=signup&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
                 });
                 
-                const data = await response.json();
+                const responseText = await response.text();
+                let data;
+                
+                try {
+                    data = JSON.parse(responseText);
+                } catch (jsonError) {
+                    signupError.textContent = 'Server returned invalid response. Please try again later.';
+                    console.error('Signup parsing error:', responseText);
+                    return;
+                }
                 
                 if (data.success) {
                     signupSuccess.textContent = 'Signup successful! Redirecting...';

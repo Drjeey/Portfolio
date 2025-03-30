@@ -1,9 +1,28 @@
 <?php
+// Set error handling to prevent HTML errors from being output
+error_reporting(E_ALL);
+ini_set('display_errors', 0);
+
+// Custom error handler to convert PHP errors to JSON responses
+set_error_handler(function($errno, $errstr, $errfile, $errline) {
+    echo json_encode([
+        "success" => false, 
+        "error" => "Server error: $errstr", 
+        "details" => "Error in $errfile on line $errline"
+    ]);
+    exit;
+});
+
 session_start(); // Start session for user authentication
 header("Content-Type: application/json"); // Ensure JSON response
 
-// Include database configuration
-require_once 'db_config.php';
+// Try to include database configuration
+try {
+    require_once 'db_config.php';
+} catch (Exception $e) {
+    echo json_encode(["success" => false, "error" => "Database configuration error: " . $e->getMessage()]);
+    exit;
+}
 
 // Get database connection
 $conn = getDbConnection();
@@ -353,10 +372,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && isset
 }
 
 // Handle retrieving messages for a specific conversation
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && isset($_GET['conversation_id'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && isset($_GET['conversation_id']) && !isset($_GET['get_history']) && !isset($_GET['get_message_count'])) {
     $user_id = $_SESSION['user_id'];
     $conversation_id = $_GET['conversation_id'];
     
+    // First, get the conversation details including summary
+    $conv_stmt = $conn->prepare("
+        SELECT 
+            conversation_summary
+        FROM conversations
+        WHERE id = ? AND user_id = ?
+    ");
+    $conv_stmt->bind_param("ii", $conversation_id, $user_id);
+    $conv_stmt->execute();
+    $conv_result = $conv_stmt->get_result();
+    $conversation_data = $conv_result->fetch_assoc();
+    $conv_stmt->close();
+    
+    // Then get the messages for this conversation
     $stmt = $conn->prepare("
         SELECT 
             c.id,
@@ -376,7 +409,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && isset
         $messages[] = $row;
     }
     
-    echo json_encode(["success" => true, "messages" => $messages]);
+    // Include conversation summary in the response
+    echo json_encode([
+        "success" => true, 
+        "messages" => $messages,
+        "conversation_summary" => $conversation_data['conversation_summary'] ?? null
+    ]);
     exit;
 }
 
@@ -436,5 +474,165 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && !isse
     exit;
 }
 
+// Handle request to get message count for a conversation
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get_message_count']) && isset($_GET['conversation_id']) && isset($_SESSION['user_id'])) {
+    $conversation_id = intval($_GET['conversation_id']);
+    $user_id = $_SESSION['user_id'];
+    
+    // Verify the conversation belongs to the user
+    $verify_stmt = $conn->prepare("SELECT id FROM conversations WHERE id = ? AND user_id = ?");
+    $verify_stmt->bind_param("ii", $conversation_id, $user_id);
+    $verify_stmt->execute();
+    $verify_stmt->store_result();
+    
+    if ($verify_stmt->num_rows === 0) {
+        echo json_encode(["success" => false, "error" => "Conversation not found"]);
+        exit;
+    }
+    $verify_stmt->close();
+    
+    // Get the count of messages
+    $count_stmt = $conn->prepare("SELECT COUNT(*) as count FROM chats WHERE conversation_id = ?");
+    $count_stmt->bind_param("i", $conversation_id);
+    $count_stmt->execute();
+    $result = $count_stmt->get_result();
+    $count_data = $result->fetch_assoc();
+    $count_stmt->close();
+    
+    echo json_encode([
+        "success" => true,
+        "count" => $count_data['count']
+    ]);
+    exit;
+}
+
+// Handle knowledge base search request
+if (isset($_GET['action']) && $_GET['action'] === 'search_knowledge_base' && isset($_GET['query'])) {
+    // Check if user is logged in
+    if (!isset($_SESSION['user_id'])) {
+        echo json_encode(['success' => false, 'error' => 'User not logged in']);
+        exit;
+    }
+    
+    $query = $_GET['query'];
+    $results = searchKnowledgeBase($query);
+    
+    echo json_encode(['success' => true, 'results' => $results]);
+    exit;
+}
+
 $conn->close();
+
+/**
+ * Search the nutrition knowledge base
+ * 
+ * @param string $query User's query
+ * @return array Search results
+ */
+function searchKnowledgeBase($query) {
+    // Qdrant configuration
+    $qdrantUrl = getenv('QDRANT_URL');
+    $qdrantApiKey = getenv('QDRANT_API_KEY');
+    $collectionName = getenv('COLLECTION_NAME') ?: 'nutrition_knowledge';
+    
+    // Get embedding for query using Gemini API
+    $embedding = getGeminiEmbedding($query);
+    
+    if (!$embedding) {
+        return [];
+    }
+    
+    // Search Qdrant using the embedding
+    $searchData = [
+        'vector' => $embedding,
+        'limit' => 3, // Return top 3 results
+        'with_payload' => true
+    ];
+    
+    $curl = curl_init();
+    curl_setopt_array($curl, [
+        CURLOPT_URL => $qdrantUrl . "/collections/{$collectionName}/points/search",
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($searchData),
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Api-Key: ' . $qdrantApiKey
+        ]
+    ]);
+    
+    $response = curl_exec($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    
+    if ($httpCode != 200) {
+        error_log("Qdrant search failed with HTTP {$httpCode}: {$response}");
+        return [];
+    }
+    
+    $searchResult = json_decode($response, true);
+    
+    if ($searchResult && isset($searchResult['result'])) {
+        return $searchResult['result'];
+    }
+    
+    return [];
+}
+
+/**
+ * Get embedding for text using Gemini API
+ * 
+ * @param string $text The text to embed
+ * @return array|null Vector embedding or null on failure
+ */
+function getGeminiEmbedding($text) {
+    $geminiApiKey = getenv('GEMINI_API_KEY');
+    if (!$geminiApiKey) {
+        error_log("Gemini API key not configured");
+        return null;
+    }
+    
+    // Trim text to avoid API limits
+    if (strlen($text) > 25000) {
+        $text = substr($text, 0, 25000);
+    }
+    
+    $url = "https://generativelanguage.googleapis.com/v1/models/embedding-001:embedContent?key={$geminiApiKey}";
+    
+    $data = [
+        'model' => 'models/embedding-001',
+        'content' => [
+            'parts' => [
+                ['text' => $text]
+            ]
+        ]
+    ];
+    
+    $curl = curl_init();
+    curl_setopt_array($curl, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json']
+    ]);
+    
+    $response = curl_exec($curl);
+    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+    curl_close($curl);
+    
+    if ($httpCode != 200) {
+        error_log("Gemini embedding request failed with HTTP {$httpCode}: {$response}");
+        return null;
+    }
+    
+    $result = json_decode($response, true);
+    
+    if ($result && isset($result['embedding']) && isset($result['embedding']['values'])) {
+        return $result['embedding']['values'];
+    }
+    
+    error_log("Unexpected Gemini embedding response: " . print_r($result, true));
+    return null;
+}
 ?>
