@@ -17,18 +17,22 @@
 .container {
     display: flex;
     height: 100vh;
+    overflow: hidden;
 }
 
 .history-panel {
-    width: 280px;
+    width: 280px !important;
     border-right: 1px solid var(--light-grey);
     padding: 20px;
     background: var(--white);
     position: relative;
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
+    z-index: 10;
+    visibility: visible !important;
+    opacity: 1 !important;
 }
 
 .history-panel h3 {
@@ -41,8 +45,24 @@
 
 .history-items {
     flex: 1;
-    overflow-y: auto;
+    overflow-y: auto !important;
     margin-bottom: 15px;
+    max-height: calc(100vh - 150px);
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    position: relative;
+    z-index: 20;
+    height: auto !important;
+    min-height: 200px !important;
+}
+
+/* Empty state for history */
+.empty-history {
+    padding: 20px 0;
+    color: var(--dark-grey);
+    text-align: center;
+    font-style: italic;
 }
 
 /* Conversation items styling */
@@ -189,8 +209,20 @@
     margin: 0 10px;
 }
 
-.chat-message {
-    margin-bottom: 15px;
+/* Style for user and model messages */
+.model .message-content {
+    background: #E3F2FD; /* Light blue background for bot messages */
+    margin-right: auto;
+    text-align: left;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    color: #333; /* Darker text for readability */
+}
+
+.user .message-content {
+    background: #1565C0; /* Darker blue for user messages */
+    color: var(--white);
+    margin-left: auto;
+    text-align: left;
 }
 
 /* Style for model message */
@@ -288,37 +320,6 @@
     width: fit-content;
 }
 
-.model .message-content {
-    background: #E3F2FD; /* Light blue background for bot messages */
-    margin-right: auto;
-    text-align: left;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    color: #333; /* Darker text for readability */
-}
-
-.user .message-content {
-    background: #1565C0; /* Darker blue for user messages */
-    color: var(--white);
-    margin-left: auto;
-    text-align: left;
-}
-
-/* Model and user message containers */
-.model, .user {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    margin-bottom: 15px;
-}
-
-.model {
-    align-items: flex-start;
-}
-
-.user {
-    align-items: flex-end;
-}
-
 /* Properly style Markdown elements */
 .message-content p {
     margin: 0 0 12px 0;
@@ -331,14 +332,6 @@
 .message-content ul, .message-content ol {
     margin: 8px 0;
     padding-left: 20px;
-}
-
-.model .message-content ul, .model .message-content ol {
-    color: #333; /* Dark text for bot lists */
-}
-
-.user .message-content ul, .user .message-content ol {
-    color: #fff; /* White text for user lists */
 }
 
 .message-content li {
@@ -356,43 +349,15 @@
     margin: 10px 0;
 }
 
-.model .message-content pre {
-    background: rgba(0,0,0,0.05); /* Light background for bot code blocks */
-}
-
-.user .message-content pre {
-    background: rgba(255,255,255,0.1); /* Slightly lighter background for user code blocks */
-}
-
 .message-content code {
     font-family: monospace;
     padding: 2px 4px;
     border-radius: 3px;
 }
 
-.model .message-content code {
-    background: rgba(0,0,0,0.05); /* Light background for bot inline code */
-    color: #0D47A1; /* Dark blue for code in bot messages */
-}
-
-.user .message-content code {
-    background: rgba(255,255,255,0.2); /* Slightly translucent background for user inline code */
-    color: #fff; /* White text for user code */
-}
-
 .message-content blockquote {
     padding-left: 10px;
     margin: 10px 0;
-}
-
-.model .message-content blockquote {
-    border-left: 3px solid #90CAF9; /* Light blue border for bot quotes */
-    color: #455A64; /* Darker blue-gray for bot quotes */
-}
-
-.user .message-content blockquote {
-    border-left: 3px solid rgba(255,255,255,0.6); /* Brighter border for user quotes */
-    color: rgba(255,255,255,0.9); /* Slightly dimmed white for user quotes */
 }
 
 .message-content h1, .message-content h2, .message-content h3,
@@ -409,15 +374,6 @@
 .message-content a {
     text-decoration: underline;
     text-underline-offset: 2px;
-}
-
-.model .message-content a {
-    color: #1565C0; /* Darker blue links for bot messages */
-}
-
-.user .message-content a {
-    color: white;
-    text-decoration-color: rgba(255, 255, 255, 0.7);
 }
 
 .message-content ul {
@@ -464,6 +420,11 @@
 
 .model p:last-child {
     margin-bottom: 0;
+}
+
+/* Ensure sources section is displayed properly */
+.model[data-has-sources="true"] .message-content {
+    padding-bottom: 0;
 }
 
 /* New conversation button in sidebar */
@@ -521,4 +482,254 @@
 .btn-icon {
     margin-right: 8px;
     font-size: 16px;
+}
+
+/* Enhanced source reference styling */
+.sources-divider {
+    margin: 20px 0 15px;
+    border-top: 2px solid #e0e0e0;
+    padding-top: 15px;
+}
+
+.sources-section {
+    margin-top: 20px;
+    border-top: 2px solid #4a86e8;
+    padding-top: 10px;
+}
+
+.sources-heading {
+    color: #4a86e8;
+    font-size: 16px;
+    margin: 0 0 10px 0;
+    font-weight: 600;
+}
+
+.knowledge-sources-wrapper {
+    margin-top: 10px;
+}
+
+.knowledge-sources-wrapper h4 {
+    color: #4a86e8;
+    margin-bottom: 8px;
+    font-size: 16px;
+}
+
+.knowledge-sources-wrapper ul {
+    padding-left: 20px;
+    margin: 0;
+}
+
+.knowledge-sources-wrapper li {
+    margin-bottom: 5px;
+}
+
+.knowledge-sources {
+    background-color: #f7f9fc;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+    border-left: 3px solid #4a86e8;
+    font-size: 0.9em;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+/* Make sure the knowledge sources are visible */
+.model .message-content .knowledge-sources {
+    display: block !important;
+    background-color: #f7f9fc;
+    color: #333;
+}
+
+.knowledge-source {
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed #e0e0e0;
+}
+
+.knowledge-source:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.knowledge-source p {
+    margin: 4px 0;
+    line-height: 1.4;
+}
+
+.knowledge-source a {
+    color: #4a86e8 !important;
+    text-decoration: none;
+    font-weight: 500;
+    transition: color 0.2s, text-decoration 0.2s;
+    display: inline-block;
+}
+
+.knowledge-source a:hover {
+    color: #3a76d8 !important;
+    text-decoration: underline;
+}
+
+.knowledge-source em {
+    color: #666;
+    font-style: italic;
+    font-size: 0.9em;
+}
+
+.sources-section a {
+    color: #4a86e8 !important;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.sources-section a:hover {
+    text-decoration: underline;
+}
+
+.source-link {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+.source-link a {
+    color: #4a86e8 !important;
+    font-size: 0.85em;
+    text-decoration: none;
+    transition: color 0.2s, text-decoration 0.2s;
+}
+
+.source-link a:hover {
+    color: #3a76d8 !important;
+    text-decoration: underline;
+}
+
+/* Message sources styling */
+.message-sources {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #ddd;
+    font-size: 0.9em;
+    display: block;
+}
+
+.model .message-sources {
+    background-color: #f7f9fc;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 10px;
+    border-left: 3px solid #4a86e8;
+}
+
+.message-sources h3 {
+    font-size: 1.1em;
+    margin-bottom: 5px;
+    color: #555;
+}
+
+.message-sources a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.message-sources a:hover {
+    text-decoration: underline;
+}
+
+.sidebar-btn {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    text-decoration: none;
+    font-weight: 600;
+    background: var(--light-grey);
+    color: #333;
+    border: none;
+    width: 100%;
+    justify-content: center;
+}
+
+.sidebar-btn:hover {
+    background: var(--light-blue);
+    color: var(--primary-blue);
+}
+
+.btn-icon, .logout-icon {
+    margin-right: 8px;
+    font-size: 16px;
+}
+
+/* Force visible class for history panel elements */
+.force-visible {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    position: relative !important;
+    left: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    clip: auto !important;
+    clip-path: none !important;
+}
+
+.history-panel.force-visible {
+    display: flex !important;
+    width: 280px !important;
+    z-index: 100 !important;
+}
+
+.history-items.force-visible {
+    min-height: 200px !important;
+    overflow-y: auto !important;
+}
+
+/* Typing indicator */
+.typing-indicator {
+    display: flex;
+    align-items: center;
+}
+
+.dot-typing {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 24px;
+}
+
+.dot-typing span {
+    background-color: #8a8a8a;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin: 0 4px;
+    display: inline-block;
+    animation: dotTypingAnimation 1.4s infinite ease-in-out;
+}
+
+.dot-typing span:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.dot-typing span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.dot-typing span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes dotTypingAnimation {
+    0%, 60%, 100% {
+        transform: scale(1);
+        opacity: 0.6;
+    }
+    30% {
+        transform: scale(1.5);
+        opacity: 1;
+    }
 }

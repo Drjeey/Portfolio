@@ -164,181 +164,295 @@ export async function updateConversationTitle(newTitle, conversationId) {
     }
 }
 
-// Load a conversation by ID
-export async function loadConversation(conversationId) {
-    try {
-        const data = await api.fetchConversation(conversationId);
+// Format messages from API for UI display
+function formatMessagesForUI(messages) {
+    return messages.map(message => {
+        // Handle different message formats from the API
+        if (message.user_message && message.bot_message) {
+            // Create separate user and model messages
+            return [
+                { role: 'user', content: message.user_message },
+                { role: 'model', content: message.bot_message }
+            ];
+        } else if (message.role && message.content) {
+            // Already in the correct format
+            return [message];
+        } else if (message.text) {
+            // Simple format with role and text
+            return [{ role: message.sender || 'model', content: message.text }];
+        }
         
-        if (data.success && data.messages) {
-            // Clear chat area
-            const chatContainer = document.querySelector(".chat-messages");
-            chatContainer.innerHTML = "";
+        // Default fallback if format is unrecognized
+        return [{ role: 'model', content: 'Unrecognized message format' }];
+    }).flat();
+}
+
+// Load a specific conversation
+export async function loadConversation(conversationId) {
+    console.log('%c[CONVERSATION] Loading conversation:', 'color: #673AB7', conversationId);
+    
+    try {
+        // Call API to get conversation details
+        const response = await api.fetchConversation(conversationId);
+        
+        if (response.success) {
+            console.log('%c[CONVERSATION] Loaded conversation successfully', 'color: #4CAF50');
             
-            // Set current conversation
-            currentState.conversationId = conversationId;
+            // Format messages for UI display
+            const formattedMessages = formatMessagesForUI(response.messages || []);
             
-            // Find and set the conversation title
-            const conversationElements = document.querySelectorAll(`.conversation-item .rename-btn[data-id="${conversationId}"]`);
-            if (conversationElements.length > 0) {
-                const titleElement = conversationElements[0].closest('.conversation-item').querySelector('.conversation-title');
-                if (titleElement) {
-                    currentState.conversationTitle = titleElement.textContent;
-                    // Update document title with conversation title
-                    ui.updateDocumentTitle(currentState.conversationTitle);
-                }
-            }
+            // Update conversation state
+            currentState = {
+                conversationId: conversationId,
+                messages: formattedMessages
+            };
             
-            // Set the conversation summary from the response
-            if (data.conversation_summary) {
-                console.log("Setting conversation summary from API response:", data.conversation_summary);
-                currentState.conversationSummary = data.conversation_summary;
-            } else {
-                // If no summary in the direct response, try fetching it
-                try {
-                    await fetchConversationSummary(conversationId);
-                } catch (summaryError) {
-                    console.error("Error fetching conversation summary:", summaryError);
-                    // Continue without summary if there's an error
-                    currentState.conversationSummary = null;
-                }
-            }
+            // Update UI with conversation messages
+            ui.displayMessages(formattedMessages);
             
-            // Group messages by date
-            const messagesByDate = {};
-            data.messages.forEach(message => {
-                const dateStr = message.date.split(' ')[0]; // Get just the date part
-                if (!messagesByDate[dateStr]) {
-                    messagesByDate[dateStr] = [];
-                }
-                messagesByDate[dateStr].push(message);
-            });
+            // Update URL with conversation ID
+            ui.updateURLWithConversationId(conversationId);
             
-            // Display conversation in UI
-            ui.displayConversation(data.messages, messagesByDate);
+            // Highlight the active conversation in the list
+            setActiveConversation(conversationId);
             
-            // Update active conversation in sidebar
-            ui.setActiveConversation(conversationId);
+            return true;
+        } else {
+            console.error('%c[CONVERSATION ERROR] Failed to load conversation:', 'color: #f44336', response.message || 'Unknown error');
+            alert('Failed to load conversation: ' + (response.message || 'Unknown error'));
+            return false;
         }
     } catch (error) {
-        console.error("Error loading conversation:", error);
+        console.error('%c[CONVERSATION ERROR] Exception while loading conversation:', 'color: #f44336', error);
+        alert('An error occurred while loading the conversation.');
+        return false;
     }
 }
 
 // Rename conversation
 export async function renameConversation(conversationId) {
-    const newTitle = prompt("Enter a new title for this conversation:");
-    if (!newTitle || newTitle.trim() === "") return;
+    console.log('%c[CONVERSATION] Renaming conversation:', 'color: #673AB7', conversationId);
+    
+    // Prompt user for new title
+    const newTitle = prompt('Enter a new name for this conversation:', '');
+    
+    // If user cancels or enters empty string, don't proceed
+    if (newTitle === null || newTitle.trim() === '') {
+        console.log('%c[CONVERSATION] Rename cancelled or empty title', 'color: #FFC107');
+        return false;
+    }
     
     try {
-        const data = await api.renameConversationAPI(conversationId, newTitle.trim());
+        // Call API to rename conversation
+        const response = await api.renameConversation(conversationId, newTitle);
         
-        if (data.success) {
-            // Refresh the conversation list
-            await loadConversationList();
+        if (response.success) {
+            console.log('%c[CONVERSATION] Renamed conversation successfully', 'color: #4CAF50');
             
-            if (conversationId === currentState.conversationId) {
-                currentState.conversationTitle = newTitle.trim();
+            // If this is the current conversation, update the title
+            if (currentState.conversationId === conversationId) {
+                ui.updateConversationTitle(newTitle);
             }
+            
+            // Reload the conversation list to show updated title
+            await loadConversationList();
+            return true;
+        } else {
+            console.error('%c[CONVERSATION ERROR] Failed to rename conversation:', 'color: #f44336', response.message || 'Unknown error');
+            alert('Failed to rename conversation: ' + (response.message || 'Unknown error'));
+            return false;
         }
     } catch (error) {
-        console.error("Error renaming conversation:", error);
+        console.error('%c[CONVERSATION ERROR] Exception while renaming conversation:', 'color: #f44336', error);
+        alert('An error occurred while renaming the conversation.');
+        return false;
     }
 }
 
 // Delete conversation
 export async function deleteConversation(conversationId) {
-    if (!confirm("Are you sure you want to delete this conversation? This cannot be undone.")) {
-        return;
+    console.log('%c[CONVERSATION] Deleting conversation:', 'color: #E91E63', conversationId);
+    
+    // Safety check: Don't delete a conversation that doesn't exist
+    if (!conversationId) {
+        console.error('%c[CONVERSATION ERROR] Cannot delete conversation: Invalid ID', 'color: #f44336');
+        return { success: false, error: 'Invalid conversation ID' };
     }
     
     try {
-        const data = await api.deleteConversationAPI(conversationId);
+        // Call API to delete the conversation
+        const response = await api.deleteConversation(conversationId);
         
-        if (data.success) {
-            if (conversationId === currentState.conversationId) {
-                // We deleted the current conversation, so start a new one
-                await startNewConversation();
-            } else {
-                // Just refresh the conversation list
-                await loadConversationList();
+        if (response.success) {
+            console.log('%c[CONVERSATION] Deleted conversation successfully:', 'color: #4CAF50', conversationId);
+            
+            // Update the UI
+            ui.removeConversationFromList(conversationId);
+            
+            // If this was the active conversation, clear the chat window
+            if (currentState.conversationId == conversationId) {
+                ui.updateUIForNewConversation();
+                currentState.conversationId = null;
+                currentState.messages = [];
+                
+                // Update the URL to remove the conversation ID
+                ui.updateURLWithConversationId(null);
             }
+            
+            return { success: true };
+        } else {
+            console.error('%c[CONVERSATION ERROR] Failed to delete conversation:', 'color: #f44336', response.error || 'Unknown error');
+            return { success: false, error: response.error || 'Unknown error' };
         }
     } catch (error) {
-        console.error("Error deleting conversation:", error);
+        console.error('%c[CONVERSATION ERROR] Exception while deleting conversation:', 'color: #f44336', error);
+        return { success: false, error: 'An error occurred while deleting the conversation.' };
     }
 }
 
-// Load conversation list
-export async function loadConversationList() {
+// Ensure history panel is visible after loading conversations
+function ensureHistoryPanelVisibility() {
+    console.log('%c[VISIBILITY] Ensuring history panel visibility', 'color: #ff9800; font-weight: bold');
+    
+    const historyPanel = document.querySelector('.history-panel');
+    const historyItems = document.querySelector('.history-items');
+    
+    if (historyPanel) {
+        historyPanel.classList.add('force-visible');
+        console.log('%c[VISIBILITY] Added force-visible class to history panel', 'color: #4CAF50');
+    } else {
+        console.log('%c[VISIBILITY ERROR] History panel not found', 'color: #f44336; font-weight: bold');
+    }
+    
+    if (historyItems) {
+        historyItems.classList.add('force-visible');
+        console.log('%c[VISIBILITY] Added force-visible class to history items', 'color: #4CAF50');
+    } else {
+        console.log('%c[VISIBILITY ERROR] History items not found', 'color: #f44336; font-weight: bold');
+    }
+}
+
+// Verify that conversations are loaded correctly
+function verifyConversationListLoaded() {
+    const historyItems = document.querySelector('.history-items');
+    
+    console.log('%c[VERIFY] Checking if conversation list loaded properly', 'color: #E91E63; font-weight: bold');
+    
+    if (!historyItems) {
+        console.error('%c[VERIFY ERROR] History items container not found', 'color: #f44336; font-weight: bold');
+        return false;
+    }
+    
+    const conversationItems = historyItems.querySelectorAll('.conversation-item');
+    console.log('%c[VERIFY] Found', 'color: #E91E63', conversationItems.length, 'conversation items');
+    
+    // If no conversations, check if the empty message is displayed
+    if (conversationItems.length === 0) {
+        const emptyMessage = historyItems.querySelector('.empty-conversations-message');
+        if (emptyMessage) {
+            console.log('%c[VERIFY] Empty conversations message is displayed', 'color: #4CAF50');
+            return true;
+        } else {
+            console.error('%c[VERIFY ERROR] No conversations and no empty message', 'color: #f44336; font-weight: bold');
+            return false;
+        }
+    }
+    
+    return conversationItems.length > 0;
+}
+
+// Update loadConversationList to pass the createConversationItem function
+async function loadConversationList() {
+    ensureHistoryPanelVisibility();
+    
     try {
-        const { success, conversations } = await api.fetchConversations();
+        console.log('%c[CONVERSATION] Loading conversation list...', 'color: #2196F3');
+        const response = await api.fetchConversations();
         
-        if (success && conversations) {
-            // Check if our current conversation is in the list
-            let currentConversationFound = false;
-            if (currentState.conversationId) {
-                currentConversationFound = conversations.some(conv => conv.id === currentState.conversationId);
+        if (response.success) {
+            const conversations = response.conversations;
+            console.log('%c[CONVERSATION] Loaded', 'color: #2196F3', conversations.length, 'conversations');
+            
+            ui.updateConversationListSimple(conversations, createConversationItem);
+            ensureHistoryPanelVisibility();
+            
+            // Verify that the conversation list loaded correctly
+            const verified = verifyConversationListLoaded();
+            if (!verified) {
+                console.warn('%c[CONVERSATION WARNING] Verification failed, re-ensuring visibility', 'color: #FFC107');
+                ensureHistoryPanelVisibility();
+                // Try one more time to update the UI
+                ui.updateConversationListSimple(conversations, createConversationItem);
             }
             
-            // Update the UI with conversations
-            ui.updateConversationList(
-                conversations, 
-                currentState.conversationId,
-                (id) => loadConversation(id),
-                (id) => renameConversation(id),
-                (id) => deleteConversation(id)
-            );
-            
-            // If we have a current conversation that's not in the list (race condition),
-            // force a UI update for it
-            if (currentState.conversationId && !currentConversationFound) {
-                console.log("Current conversation not found in list, forcing UI update");
-                ui.setActiveConversation(currentState.conversationId);
-            }
+            return conversations;
+        } else {
+            console.error('%c[CONVERSATION ERROR] Failed to load conversations:', 'color: #f44336', response.message || 'Unknown error');
+            ensureHistoryPanelVisibility();
+            return [];
         }
     } catch (error) {
-        console.error("Error loading conversations:", error);
+        console.error('%c[CONVERSATION ERROR] Exception while loading conversations:', 'color: #f44336', error);
+        ensureHistoryPanelVisibility();
+        return [];
     }
 }
 
 // Start a new conversation
 export async function startNewConversation() {
+    console.log('%c[CONVERSATION] Starting new conversation', 'color: #673AB7');
+    
+    // Clear the current conversation
+    ui.updateUIForNewConversation();
+    
+    // Reset conversation state with all required properties
+    currentState = {
+        conversationId: null,
+        conversationTitle: "New Nutrition Conversation",
+        conversationSummary: null,
+        titleHasBeenUpdated: false,
+        messages: []
+    };
+    
     try {
-        // Create a better default title with date/time - focused on nutrition
-        const now = new Date();
-        const formattedTime = now.toLocaleString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-        const defaultTitle = `NutriGuide Chat ${formattedTime}`;
+        // Call API to create a new conversation
+        const response = await api.createConversation();
         
-        // Create a new conversation in the database
-        const data = await api.createConversation(defaultTitle);
-        
-        if (data.success) {
-            // Update current conversation
-            currentState.conversationId = data.conversation_id;
-            currentState.conversationTitle = defaultTitle;
-            currentState.conversationSummary = null; // Reset summary for new conversation
-            currentState.titleHasBeenUpdated = false; // Explicitly mark title as not updated
+        if (response.success) {
+            const newConversationId = response.conversation_id;
+            console.log('%c[CONVERSATION] Created new conversation:', 'color: #4CAF50', newConversationId);
             
-            // Get personalized welcome message
-            const welcomeMessage = ui.getWelcomeMessageHTML(window.username);
+            // Update state with new ID
+            currentState.conversationId = newConversationId;
+            if (response.title) {
+                currentState.conversationTitle = response.title;
+            }
             
-            // Clear chat UI and add welcome message
-            document.querySelector(".chat-messages").innerHTML = welcomeMessage;
+            // Store in window for cross-module access
+            window.currentConversationId = newConversationId;
             
-            // Always refresh conversation list to ensure new conversation appears 
-            // and is properly highlighted
+            // Update URL with new conversation ID
+            ui.updateURLWithConversationId(newConversationId);
+            
+            // Reload conversation list to show the new conversation
             await loadConversationList();
             
-            // Update document title to make it clear user started a new chat
-            ui.updateDocumentTitle("New NutriGuide Chat");
+            return { success: true, conversation_id: newConversationId };
+        } else {
+            console.error('%c[CONVERSATION ERROR] Failed to create new conversation:', 'color: #f44336', response.error || 'Unknown error');
+            return { success: false, error: response.error || 'Unknown error' };
         }
     } catch (error) {
-        console.error("Error creating new conversation:", error);
+        console.error('%c[CONVERSATION ERROR] Exception while creating new conversation:', 'color: #f44336', error);
+        return { success: false, error: 'An error occurred while creating a new conversation.' };
+    }
+}
+
+// Function to clear the chat window
+function clearChatWindow() {
+    const chatMessages = document.querySelector(".chat-messages");
+    if (chatMessages) {
+        chatMessages.innerHTML = "";
     }
 }
 
@@ -391,4 +505,163 @@ export async function fetchConversationSummary(conversationId) {
 // Get whether the current conversation title has been updated from default
 export function getTitleHasBeenUpdated() {
     return currentState.titleHasBeenUpdated;
-} 
+}
+
+// Listen for title update events from API
+document.addEventListener('conversationTitleUpdated', async (event) => {
+    const { conversationId, title } = event.detail;
+    
+    // Show notification about the new title
+    if (typeof ui !== 'undefined' && typeof ui.showTitleNotification === 'function') {
+        ui.showTitleNotification(title);
+    }
+    
+    // Update conversation list if we're in a conversation
+    if (getCurrentConversationId()) {
+        await loadConversationList();
+    }
+});
+
+// Debug current conversation state - helpful for troubleshooting
+export function debugConversationState() {
+    const state = {
+        currentStateId: currentState.conversationId,
+        currentWindowId: window.currentConversationId,
+        currentTitle: currentState.conversationTitle,
+        titleUpdated: currentState.titleHasBeenUpdated,
+        summary: currentState.conversationSummary ? 
+            currentState.conversationSummary.substring(0, 50) + '...' : 
+            null
+    };
+    
+    console.log("CONVERSATION STATE:", state);
+    
+    // Check for UI state
+    const activeConvElem = document.querySelector('.conversation-item.active');
+    if (activeConvElem) {
+        const activeId = activeConvElem.getAttribute('data-id');
+        const activeTitle = activeConvElem.querySelector('.conversation-title')?.textContent;
+        console.log("ACTIVE CONVERSATION UI:", { id: activeId, title: activeTitle });
+    } else {
+        console.log("No active conversation in UI");
+    }
+    
+    return state;
+}
+
+// Create a conversation item element for the history panel
+export function createConversationItem(conv) {
+    // Format the date
+    const date = new Date(conv.timestamp);
+    const formattedDate = date.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: date.getFullYear() !== new Date().getFullYear() ? 'numeric' : undefined
+    });
+    
+    // Create the conversation item
+    const conversationItem = document.createElement('div');
+    conversationItem.className = 'conversation-item';
+    conversationItem.dataset.id = conv.id;
+    
+    // Create the title element
+    const titleElement = document.createElement('div');
+    titleElement.className = 'conversation-title';
+    titleElement.textContent = conv.title || 'New Conversation';
+    
+    // Create the date element
+    const dateElement = document.createElement('div');
+    dateElement.className = 'conversation-date';
+    dateElement.textContent = formattedDate;
+    
+    // Create the actions container
+    const actionsElement = document.createElement('div');
+    actionsElement.className = 'conversation-actions';
+    
+    // Create rename button
+    const renameBtn = document.createElement('button');
+    renameBtn.className = 'rename-btn';
+    renameBtn.dataset.id = conv.id;
+    renameBtn.title = 'Rename';
+    renameBtn.textContent = '✏️';
+    
+    // Create delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.dataset.id = conv.id;
+    deleteBtn.title = 'Delete';
+    deleteBtn.textContent = '🗑️';
+    
+    // Add buttons to actions
+    actionsElement.appendChild(renameBtn);
+    actionsElement.appendChild(deleteBtn);
+    
+    // Add all elements to the conversation item
+    conversationItem.appendChild(titleElement);
+    conversationItem.appendChild(dateElement);
+    conversationItem.appendChild(actionsElement);
+    
+    // Add event listener for loading the conversation
+    conversationItem.addEventListener('click', (e) => {
+        // Only proceed if we didn't click on a button
+        if (!e.target.classList.contains('rename-btn') && 
+            !e.target.classList.contains('delete-btn')) {
+            loadConversation(conv.id);
+        }
+    });
+    
+    // Add event listeners for the action buttons
+    renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renameConversation(conv.id);
+    });
+    
+    deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Confirm deletion first
+        if (confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
+            deleteConversation(conv.id).then(result => {
+                if (!result.success) {
+                    console.error('[CONVERSATION ERROR] Failed to delete conversation:', result.error);
+                    alert('Failed to delete conversation: ' + (result.error || 'Unknown error'));
+                }
+            }).catch(error => {
+                console.error('[CONVERSATION ERROR] Exception while deleting conversation:', error);
+                alert('An error occurred while deleting the conversation.');
+            });
+        } else {
+            console.log('[CONVERSATION] Delete cancelled by user');
+        }
+    });
+    
+    return conversationItem;
+}
+
+// Initialize the conversation module
+export function init() {
+    console.log('%c[CONVERSATION] Initializing conversation module', 'color: #673AB7; font-weight: bold');
+    // Check if history panel exists and is visible
+    ensureHistoryPanelVisibility();
+    // Load the conversation list
+    return loadConversationList();
+}
+
+// Set the active conversation in the UI
+export function setActiveConversation(conversationId) {
+    const items = document.querySelectorAll('.conversation-item');
+    let found = false;
+    
+    items.forEach(item => {
+        if (item.dataset.id === conversationId) {
+            item.classList.add('active');
+            found = true;
+        } else {
+            item.classList.remove('active');
+        }
+    });
+    
+    return found;
+}
+
+// Export the loadConversationList function
+export { loadConversationList }; 

@@ -131,6 +131,9 @@ if ($httpCode != 200) {
     exit;
 }
 
+// Log raw response for debugging
+error_log("Raw response: " . json_encode($response));
+
 // Parse the response
 $responseData = json_decode($response, true);
 
