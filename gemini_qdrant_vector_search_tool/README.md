@@ -11,7 +11,7 @@ A standalone tool for searching a Qdrant vector database using Google's Gemini A
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.11+ (Python 3.11.5 recommended)
 - A Google Cloud account with Gemini API access
 - A Qdrant account with an existing collection containing embeddings
 
