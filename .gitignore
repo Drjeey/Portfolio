@@ -19,10 +19,6 @@ vendor/
 *.swo
 .DS_Store 
 
-# Exclude specific project directories
-/Nutrition_data/
-/health_kb_builder/
-
 # Runtime data
 pids
 *.pid

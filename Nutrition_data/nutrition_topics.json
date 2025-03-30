@@ -1,0 +1,260 @@
+{
+  "articles": [
+    {
+      "filename": "Carbohydrates_Essential_Energy_Source.txt",
+      "title": "Carbohydrates: Essential Energy Source",
+      "topics": [
+        "carbohydrate structure",
+        "monosaccharides",
+        "disaccharides",
+        "oligosaccharides",
+        "polysaccharides",
+        "glycogen",
+        "starch",
+        "fiber",
+        "energy metabolism",
+        "blood glucose regulation",
+        "recommended carbohydrate intake",
+        "carbohydrate food sources",
+        "simple sugars",
+        "complex carbohydrates"
+      ]
+    },
+    {
+      "filename": "Proteins_Building_Blocks_of_Life.txt",
+      "title": "Proteins: Building Blocks of Life",
+      "topics": [
+        "protein structure",
+        "amino acids",
+        "peptide bonds",
+        "protein folding",
+        "primary structure",
+        "secondary structure",
+        "tertiary structure",
+        "quaternary structure",
+        "protein functions",
+        "enzymes",
+        "hormones",
+        "antibodies",
+        "structural proteins",
+        "recommended protein intake",
+        "complete proteins",
+        "animal protein sources",
+        "plant protein sources",
+        "essential amino acids"
+      ]
+    },
+    {
+      "filename": "Fats_Essential_Nutrients_for_Health.txt",
+      "title": "Fats: Essential Nutrients for Health",
+      "topics": [
+        "fat structure",
+        "triglycerides",
+        "fatty acids",
+        "saturated fats",
+        "unsaturated fats",
+        "monounsaturated fats",
+        "polyunsaturated fats",
+        "trans fats",
+        "omega-3 fatty acids",
+        "omega-6 fatty acids",
+        "essential fatty acids",
+        "phospholipids",
+        "cholesterol",
+        "fat functions",
+        "fat-soluble vitamins",
+        "recommended fat intake",
+        "fat food sources"
+      ]
+    },
+    {
+      "filename": "Nutrition_Through_Life_Stages.txt",
+      "title": "Nutrition Through Life Stages: Changing Needs from Infancy to Older Adulthood",
+      "topics": [
+        "infant nutrition",
+        "breastfeeding",
+        "complementary feeding",
+        "childhood nutrition",
+        "adolescent nutrition",
+        "pregnancy nutrition",
+        "lactation nutrition",
+        "older adult nutrition",
+        "nutritional requirements by age",
+        "growth and development",
+        "age-specific nutrient needs",
+        "life stage dietary recommendations"
+      ]
+    },
+    {
+      "filename": "Managing_Food_Allergies_and_Intolerances.txt",
+      "title": "Managing Food Allergies and Intolerances",
+      "topics": [
+        "food allergies",
+        "food intolerances",
+        "common allergens",
+        "allergic reactions",
+        "anaphylaxis",
+        "lactose intolerance",
+        "gluten sensitivity",
+        "celiac disease",
+        "cross-contamination",
+        "allergen avoidance",
+        "reading food labels",
+        "elimination diets",
+        "nutritional adequacy with food restrictions"
+      ]
+    },
+    {
+      "filename": "Food_Safety_and_Preparation.txt",
+      "title": "Food Safety and Preparation: Essential Principles",
+      "topics": [
+        "foodborne illness prevention",
+        "safe food handling",
+        "food storage",
+        "thawing methods",
+        "cooking temperatures",
+        "cross-contamination prevention",
+        "leftovers safety",
+        "preserving nutrients while cooking",
+        "cooking methods",
+        "food thermometers",
+        "nutrient retention"
+      ]
+    },
+    {
+      "filename": "Digestive_Disorders_and_Dietary_Management.txt",
+      "title": "Digestive Disorders and Dietary Management",
+      "topics": [
+        "irritable bowel syndrome",
+        "inflammatory bowel disease",
+        "gastroesophageal reflux disease",
+        "celiac disease",
+        "low FODMAP diet",
+        "gluten-free diet",
+        "anti-inflammatory diets",
+        "specific carbohydrate diet",
+        "dietary management of digestive disorders",
+        "gut health",
+        "digestive system",
+        "dietary triggers"
+      ]
+    },
+    {
+      "filename": "Autoimmune_Conditions_and_Nutrition.txt",
+      "title": "Autoimmune Conditions and Nutrition",
+      "topics": [
+        "autoimmune diseases",
+        "chronic inflammation",
+        "anti-inflammatory diet",
+        "Mediterranean diet",
+        "autoimmune protocol diet",
+        "vitamin D and immunity",
+        "omega-3 fatty acids and inflammation",
+        "antioxidants",
+        "gut microbiome",
+        "leaky gut",
+        "food triggers",
+        "elimination diets for autoimmune conditions"
+      ]
+    },
+    {
+      "filename": "Vitamins_and_Minerals_Essential_Micronutrients.txt",
+      "title": "Vitamins and Minerals: Essential Micronutrients",
+      "topics": [
+        "water-soluble vitamins",
+        "fat-soluble vitamins",
+        "vitamin A",
+        "vitamin B complex",
+        "vitamin C",
+        "vitamin D",
+        "vitamin E",
+        "vitamin K",
+        "major minerals",
+        "trace minerals",
+        "calcium",
+        "iron",
+        "zinc",
+        "magnesium",
+        "phosphorus",
+        "iodine",
+        "selenium",
+        "copper",
+        "nutrient deficiencies",
+        "micronutrient interactions"
+      ]
+    },
+    {
+      "filename": "Hydration_Importance_and_Recommendations.txt",
+      "title": "Hydration: Importance and Recommendations",
+      "topics": [
+        "water functions",
+        "daily water requirements",
+        "dehydration",
+        "overhydration",
+        "hyponatremia",
+        "hydration sources",
+        "water-rich foods",
+        "electrolytes",
+        "hydration for exercise",
+        "hydration for special populations",
+        "hydration strategies"
+      ]
+    },
+    {
+      "filename": "Weight_Management_Principles.txt",
+      "title": "Weight Management Principles",
+      "topics": [
+        "energy balance",
+        "basal metabolic rate",
+        "thermic effect of food",
+        "physical activity energy expenditure",
+        "caloric deficit",
+        "sustainable weight loss",
+        "macronutrient balance for weight management",
+        "fiber and satiety",
+        "exercise for weight management",
+        "behavioral strategies",
+        "self-monitoring",
+        "mindful eating",
+        "environmental modifications",
+        "sleep and weight",
+        "stress management",
+        "weight maintenance"
+      ]
+    },
+    {
+      "filename": "Popular_Dietary_Patterns.txt",
+      "title": "Popular Dietary Patterns",
+      "topics": [
+        "Mediterranean diet",
+        "DASH diet",
+        "vegetarian diets",
+        "vegan diet",
+        "plant-based diets",
+        "ketogenic diet",
+        "paleo diet",
+        "intermittent fasting",
+        "time-restricted eating",
+        "dietary pattern health benefits",
+        "evidence-based diets",
+        "choosing a dietary pattern",
+        "sustainable eating"
+      ]
+    }
+  ],
+  "general_nutrition_topics": [
+    "macronutrients",
+    "micronutrients",
+    "dietary patterns",
+    "special nutritional needs",
+    "food safety",
+    "digestion and absorption",
+    "metabolism",
+    "weight management",
+    "hydration",
+    "dietary guidelines",
+    "nutritional assessment",
+    "diet planning"
+  ],
+  "attribution_template": "According to the article '{title}', {information_quote}"
+} 

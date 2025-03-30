@@ -1,0 +1,66 @@
+Proteins: Building Blocks of Life
+
+Chemical Structure
+
+Proteins are complex polypeptide structures consisting of one or more long chains of amino acid residues. These chains are formed by linking amino acids together through covalent peptide bonds during protein biosynthesis.
+
+There are 20 different types of amino acids used to create proteins, each with a central α-carbon bonded to an amino group, a carboxyl group, a hydrogen atom, and a variable side chain (R group) that dictates its unique chemical properties.
+
+Proteins exhibit four levels of structural organization:
+- Primary structure: The linear sequence of amino acids
+- Secondary structure: Local, regularly repeating structures like alpha-helices and beta-pleated sheets stabilized by hydrogen bonds
+- Tertiary structure: The overall three-dimensional shape of a single protein molecule determined by interactions of side chains
+- Quaternary structure: The arrangement of two or more polypeptide chains in proteins with multiple subunits
+
+The specific order and type of amino acids in a polypeptide chain determine the protein's unique three-dimensional conformation, which is essential for its biological function.
+
+Functions in the Body
+
+Proteins perform a vast array of functions in the body:
+
+- Structural support: Proteins like collagen, keratin, and elastin provide physical structure to tissues and organs
+- Biochemical catalysts: Enzymes such as amylase, lipase, pepsin, and trypsin facilitate chemical reactions
+- Hormones: Proteins like insulin, glucagon, and growth hormone act as chemical messengers
+- Transport and storage: Hemoglobin, albumin, and ferritin transport and store essential substances
+- Immune defense: Immunoglobulins (antibodies) protect against pathogens
+- Muscle contraction: Actin and myosin enable movement
+- Cellular processes: Proteins are involved in DNA replication, gene transcription, cell signaling, and transport across cell membranes
+- Growth and maintenance: Essential for all tissues including muscle, bone, skin, and organs
+- Metabolic regulation: Control various biochemical processes throughout the body
+
+Recommended Daily Intake
+
+The Recommended Dietary Allowance (RDA) for protein in healthy adults is 0.8 grams per kilogram of body weight per day to prevent deficiency. For a person weighing 75 kilograms (165 pounds), this equals approximately 60 grams of protein daily.
+
+The Acceptable Macronutrient Distribution Range (AMDR) for protein is 10% to 35% of total daily calories. For a 2,000 calorie diet, this translates to 50-175 grams of protein per day.
+
+Protein needs are higher during:
+- Periods of growth (childhood, adolescence, pregnancy)
+- Lactation
+- Recovery from injury or surgery
+- Older adulthood (to help prevent age-related muscle loss)
+- Regular exercise, particularly high-intensity or endurance activities (1.2 to 1.7 grams per kilogram of body weight)
+
+For optimal muscle protein synthesis and satiety, it's recommended to consume 15-30 grams of protein at each meal.
+
+Food Sources
+
+Protein is found in various foods from both animal and plant sources:
+
+Animal Sources (Complete Proteins)
+- Lean meats: Beef, lamb, veal, pork
+- Poultry: Chicken, turkey, duck
+- Fish and seafood
+- Eggs
+- Dairy products: Milk, yogurt, cheese (especially Greek yogurt and cottage cheese)
+
+Animal sources are considered high-quality or complete proteins because they contain all nine essential amino acids in sufficient amounts.
+
+Plant Sources
+- Legumes: Beans, peas, lentils, chickpeas
+- Nuts: Almonds, peanuts, walnuts, cashews
+- Seeds: Pumpkin, sunflower, hemp
+- Soy products: Tofu, tempeh, edamame, soy milk
+- Some grains: Quinoa
+
+Plant-based protein sources often provide more fiber and less saturated fat compared to some animal sources. Combining various plant proteins ensures a full complement of essential amino acids, particularly important for vegetarian and vegan diets. 
