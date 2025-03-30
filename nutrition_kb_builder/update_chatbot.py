@@ -243,7 +243,7 @@ export default knowledgeBase;
     print(f"Created/Updated: {js_path}")
 
 def update_chat_js(js_path):
-    """Update the chat.js file to use the knowledge base with enhanced RAG"""
+    """Update chat.js to integrate with knowledge base"""
     if not os.path.exists(js_path):
         print(f"Error: {js_path} not found!")
         return False
@@ -251,95 +251,226 @@ def update_chat_js(js_path):
     with open(js_path, 'r') as f:
         content = f.read()
     
-    # Check if knowledge base is already imported
-    if "import knowledgeBase from './knowledgeBase.js'" in content:
-        print(f"{js_path} already has knowledge base import")
+    # Check if knowledge base integration is already in place
+    if "searchKnowledgeBase" in content:
+        print(f"{js_path} already has knowledge base integration")
         return True
-        
-    # Add import statement at the top (after other imports)
-    import_statement = "import knowledgeBase from './knowledgeBase.js';"
-    if "import" in content:
-        lines = content.split('\n')
-        last_import_idx = 0
-        for i, line in enumerate(lines):
-            if line.strip().startswith('import '):
-                last_import_idx = i
-        
-        lines.insert(last_import_idx + 1, import_statement)
-        updated_content = '\n'.join(lines)
-    else:
-        # If no imports, add it at the top
-        updated_content = import_statement + '\n' + content
     
-    # Find the sendPrompt or similar function to modify
-    if "async function sendPrompt" in updated_content:
-        # Replace the simple sendPrompt with knowledge-enhanced version
-        updated_content = updated_content.replace(
-            "async function sendPrompt(userMessages, summaryPrompt, previousResponse = null, tempOverride = null) {",
-            """async function sendPrompt(userMessages, summaryPrompt, previousResponse = null, tempOverride = null) {
-    // Get the latest user message
-    const lastUserMessage = userMessages[userMessages.length - 1].content;
-    console.log("Processing user query:", lastUserMessage);
+    # Identify and update the sendMessageToAI function
+    if "async function sendMessageToAI(" in content:
+        # Identify the existing function
+        function_start = content.find("async function sendMessageToAI(")
+        function_end = content.find("}", function_start)
+        while content.count("{", function_start, function_end) != content.count("}", function_start, function_end):
+            function_end = content.find("}", function_end + 1)
+        function_end += 1
+        
+        original_function = content[function_start:function_end]
+        
+        # Create the new function with knowledge base integration
+        new_function = '''async function sendMessageToAI(message, conversationSummary = "", conversationId = null) {
+    console.log("Sending message to AI:", message);
     
-    // This is a closed-domain nutrition chatbot, all queries use the knowledge base
-    let knowledgeResults = [];
-    console.log("Searching knowledge base for relevant information...");
+    let isNutritionQuery = isNutritionRelated(message);
+    let knowledgeContext = "";
+    let sources = [];
+    
+    // For nutrition-related queries, search the knowledge base
+    if (isNutritionQuery) {
+        try {
+            console.log("Searching knowledge base for nutrition information");
+            const knowledgeResults = await knowledgeBase.search(message);
+            
+            if (knowledgeResults && knowledgeResults.length > 0) {
+                console.log("Found relevant nutrition information:", knowledgeResults);
+                
+                // Format the knowledge context
+                knowledgeContext = formatKnowledgeContext(knowledgeResults);
+                sources = knowledgeResults;
+            } else {
+                console.log("No relevant nutrition information found");
+            }
+        } catch (error) {
+            console.error("Error searching knowledge base:", error);
+        }
+    }
+    
+    // Prepare the prompt
+    const userMessage = {
+        role: "user",
+        content: message
+    };
+    
+    let prompt = [];
+    
+    // Add system instructions
+    prompt.push({
+        role: "system", 
+        content: baseSystemInstruction
+    });
+    
+    // Add conversation summary if available
+    if (conversationSummary) {
+        prompt.push({
+            role: "system", 
+            content: `Conversation summary so far: ${conversationSummary}`
+        });
+    }
+    
+    // Add knowledge context if available
+    if (knowledgeContext) {
+        prompt.push({
+            role: "system", 
+            content: `Relevant nutrition knowledge to help you answer: ${knowledgeContext}`
+        });
+        
+        // Add instructions for using knowledge
+        prompt.push({
+            role: "system", 
+            content: `Please use the above nutrition information to provide an accurate, evidence-based response. 
+            
+1. Synthesize the information into a COHERENT and UNIFIED answer that directly addresses the user's question
+2. DO NOT list information as bullet points unless the format specifically calls for it
+3. Write in a conversational, helpful tone as a nutrition expert
+4. Focus on the most relevant information to the user's specific question
+5. DO NOT repeat the same information multiple times
+6. You MUST base your nutrition advice ONLY on the provided information, not on your general knowledge
+7. If there's not enough information to answer confidently, acknowledge that limitation
+8. Your answer should flow naturally like human speech - not feel like disconnected facts
+9. DO NOT use phrases like "Based on the provided information" or "According to the information"
+10. Focus primarily on answering the specific question, not listing everything you know
+11. If multiple sources provide contradictory information, acknowledge this and present both perspectives`
+        });
+    }
+    
+    // Add the user message
+    prompt.push(userMessage);
+    
     try {
-        knowledgeResults = await knowledgeBase.search(lastUserMessage);
-        if (knowledgeResults.length > 0) {
-            console.log(`Found ${knowledgeResults.length} relevant nutrition information sources`);
-            
-            // Format citation from sources for debug purposes
-            const sourcesStr = knowledgeResults.map(r => r.title).join(", ");
-            console.log(`Sources: ${sourcesStr}`);
-        } else {
-            console.log("No relevant information found in knowledge base");
-        }
-    } catch (error) {
-        console.error("Error searching knowledge base:", error);
-    }
-"""
-        )
+        // Show thinking indicator
+        showThinkingIndicator();
         
-        # Find where the prompt is constructed and enhance it with knowledge
-        if "const prompt = " in updated_content:
-            updated_content = updated_content.replace(
-                "const prompt = `",
-                "let prompt = `"
-            )
-            
-            # Add knowledge enhancement after prompt construction
-            updated_content = updated_content.replace(
-                "const response = await fetch",
-                """// Enhance prompt with knowledge base information
-    if (knowledgeResults && knowledgeResults.length > 0) {
-        prompt = knowledgeBase.enhancePromptWithKnowledge(prompt, knowledgeResults);
-    } else {
-        // Add instruction to say we don't have information if knowledge base search failed
-        prompt += '\\n\\nIf you don\\'t have specific nutrition information to answer the question, say "I don\\'t have enough information about that topic."';
+        const response = await fetch('gemini-proxy.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                messages: prompt,
+                conversation_id: conversationId
+            })
+        });
+        
+        // Hide thinking indicator
+        hideThinkingIndicator();
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Error from AI service:', errorText);
+            return {
+                role: "assistant",
+                content: "I'm having trouble connecting to my AI services. Please try again in a moment."
+            };
+        }
+        
+        const data = await response.json();
+        
+        if (!data.success) {
+            console.error('Error generating response:', data.message);
+            return {
+                role: "assistant",
+                content: `I'm having trouble generating a response: ${data.message}`
+            };
+        }
+        
+        // Format the response with source attribution if needed
+        let formattedContent = data.content;
+        if (sources && sources.length > 0) {
+            formattedContent = ui.formatSourceAttribution(formattedContent, sources);
+        }
+        
+        return {
+            role: "assistant",
+            content: formattedContent
+        };
+    } catch (error) {
+        console.error('Error sending message to AI:', error);
+        hideThinkingIndicator();
+        return {
+            role: "assistant",
+            content: "I encountered an error while processing your request. Please try again."
+        };
+    }
+}
+
+/**
+ * Format knowledge context for inclusion in the prompt
+ * @param {Array} results - Knowledge base search results
+ * @returns {string} Formatted knowledge context
+ */
+function formatKnowledgeContext(results) {
+    if (!results || results.length === 0) {
+        return "";
     }
     
-    const response = await fetch"""
-            )
-            
-            # Add citation to the response
-            if "updateMessageResponseUI(formattedResponse, messageElement)" in updated_content:
-                updated_content = updated_content.replace(
-                    "updateMessageResponseUI(formattedResponse, messageElement)",
-                    """// Add source attribution if we have knowledge results
-        if (knowledgeResults && knowledgeResults.length > 0) {
-            const sources = knowledgeResults.map(result => ({
-                title: result.title,
-                topics: result.topics
-            }));
-            formattedResponse = ui.formatSourceAttribution(formattedResponse, sources);
+    let context = "NUTRITION INFORMATION:\\n\\n";
+    
+    // Add the top results with clear section markers
+    results.forEach((result, index) => {
+        context += `[Information ${index + 1}] `;
+        context += `Title: ${result.title}\\n`;
+        
+        // Include topics as keywords
+        if (result.topics && result.topics.length > 0) {
+            context += `Topics: ${result.topics.join(", ")}\\n`;
         }
-        updateMessageResponseUI(formattedResponse, messageElement)"""
-                )
+        
+        // Add the text content
+        context += `${result.text}\\n\\n`;
+    });
+    
+    return context;
+}'''
+        
+        # Replace the function
+        content = content.replace(original_function, new_function)
+    
+    # Update the isNutritionRelated function if it exists
+    if "function isNutritionRelated(" in content:
+        # Find the existing function
+        function_start = content.find("function isNutritionRelated(")
+        function_end = content.find("}", function_start)
+        while content.count("{", function_start, function_end) != content.count("}", function_start, function_end):
+            function_end = content.find("}", function_end + 1)
+        function_end += 1
+        
+        # Replace with enhanced version
+        new_function = '''function isNutritionRelated(message) {
+    const lowerMessage = message.toLowerCase();
+    
+    // List of nutrition-related keywords
+    const nutritionKeywords = [
+        'diet', 'food', 'eat', 'nutrition', 'nutrient', 'meal', 'vitamin', 
+        'mineral', 'protein', 'carb', 'fat', 'fiber', 'calorie', 'weight',
+        'health', 'healthy', 'mediterranean', 'vegan', 'vegetarian', 'keto',
+        'paleo', 'gluten', 'dairy', 'sugar', 'cholesterol', 'heart', 'diabetes',
+        'blood pressure', 'allergy', 'intolerance', 'supplement', 'macro',
+        'vegetable', 'fruit', 'meat', 'fish', 'egg', 'milk', 'breakfast',
+        'lunch', 'dinner', 'snack', 'meal plan', 'recipe'
+    ];
+    
+    // Check if any of the keywords are in the message
+    return nutritionKeywords.some(keyword => 
+        lowerMessage.includes(keyword) || 
+        lowerMessage.split(/\\s+/).includes(keyword)
+    );
+}'''
+        
+        content = content.replace(content[function_start:function_end], new_function)
     
     # Write the updated content back to the file
     with open(js_path, 'w') as f:
-        f.write(updated_content)
+        f.write(content)
     
     print(f"Updated: {js_path}")
     return True
@@ -678,8 +809,8 @@ function searchQdrant($vector, $limit, $qdrantUrl, $qdrantApiKey, $collectionNam
         "vector" => $vector,
         "limit" => $limit,
         "with_payload" => true,
-        "with_vectors" => false,
-        "score_threshold" => 0.1  // Extremely low threshold to ensure we get results
+        "with_vectors" => false
+        // No score_threshold to ensure we get reliable results
     ];
     
     // Add filter if provided
@@ -707,22 +838,32 @@ function searchQdrant($vector, $limit, $qdrantUrl, $qdrantApiKey, $collectionNam
     
     $results = json_decode($response, true);
     
-    if (!isset($results['result'])) {
-        error_log("Unexpected response format from Qdrant API");
+    // Handle different response formats
+    $hits = [];
+    if (isset($results['result'])) {
+        $hits = $results['result'];
+    } elseif (isset($results['hits'])) {
+        $hits = $results['hits'];
+    }
+    
+    if (empty($hits)) {
+        error_log("No hits found in Qdrant response");
         return [];
     }
     
     // Format results
     $formattedResults = [];
-    foreach ($results['result'] as $hit) {
-        $formattedResults[] = [
-            "score" => $hit['score'],
-            "title" => $hit['payload']['title'],
-            "filename" => $hit['payload']['filename'],
-            "topics" => $hit['payload']['topics'],
-            "text" => $hit['payload']['text'],
-            "chunk_index" => $hit['payload']['chunk_index']
-        ];
+    foreach ($hits as $hit) {
+        if (isset($hit['payload'])) {
+            $formattedResults[] = [
+                "score" => $hit['score'] ?? 0,
+                "title" => $hit['payload']['title'] ?? 'Unknown',
+                "filename" => $hit['payload']['filename'] ?? '',
+                "topics" => $hit['payload']['topics'] ?? [],
+                "text" => $hit['payload']['text'] ?? '',
+                "chunk_index" => $hit['payload']['chunk_index'] ?? 0
+            ];
+        }
     }
     
     return $formattedResults;

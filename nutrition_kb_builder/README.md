@@ -1,131 +1,165 @@
 # Nutrition Knowledge Base Builder
 
-This tool embeds nutrition articles into Qdrant for semantic search, enabling a nutrition chatbot to respond based only on verified nutrition information.
+A toolkit for building and integrating a semantic search knowledge base for nutrition information with your chatbot application.
 
-## Features
+## Overview
 
-- Processes nutrition articles stored in text files
-- Chunks text into semantically meaningful segments
-- Creates embeddings using Google's Gemini Embedding API
-- Stores vectors and metadata in Qdrant for easy retrieval
-- Includes search testing functionality
-- Automatically updates the IS 2025 chat interface
+This toolkit allows you to:
 
-## Key Scripts
+1. Process nutrition articles and embed them into a Qdrant vector database
+2. Search for nutrition information using semantic similarity
+3. Generate coherent answers from search results using the Gemini API
+4. Integrate the knowledge base with your chat interface
 
-### 1. `nutrition_embedder.py`
+## Quick Start
 
-This is the main script responsible for processing nutrition articles and uploading them to Qdrant. It:
-- Reads nutrition articles from the specified directory
-- Chunks the content into manageable pieces
-- Creates vector embeddings for each chunk using Gemini API
-- Uploads the chunks with their metadata to Qdrant
+```bash
+# Setup
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your API keys
 
-### 2. `search_test.py`
+# Create embeddings
+python nutrition_embedder.py
 
-This script is essential for testing that your Qdrant integration is working correctly. It allows you to:
-- Test semantic search queries against your knowledge base
-- Verify the relevance of search results before integrating with your chatbot
-- Debug any issues with your embeddings or Qdrant setup
-- Evaluate the quality of results with different search parameters
+# Test the search
+python nutrition_search.py --query "What are the health benefits of the Mediterranean diet?"
 
-This is an important verification step before connecting your knowledge base to the actual chatbot application.
+# Integrate with your chat interface
+python update_chatbot.py
+```
 
-### 3. `update_chatbot.py`
+## Core Components
 
-This script handles the integration of the Qdrant knowledge base with your existing IS 2025 chat application. It:
-- Creates and updates necessary JavaScript modules in the IS 2025 project
-- Modifies the chat.js file to use the knowledge base for lookups
-- Updates the backend.php file to handle knowledge base searches
-- Adds UI enhancements to display source attributions
-- Creates necessary configuration files for the integration
-
-This script saves you from having to manually update multiple files across the IS 2025 project and ensures that all components work together properly.
+- **nutrition_embedder.py**: Processes nutrition articles and uploads them to Qdrant
+- **nutrition_search.py**: Searches the knowledge base and synthesizes answers
+- **update_chatbot.py**: Integrates the knowledge base with your chat interface
+- **load_env.py**: Utility for loading environment variables
 
 ## Setup
 
-1. Install Python dependencies:
+### Prerequisites
+- Python 3.8 or higher
+- A Qdrant account and API key
+- Google Gemini API key
+- Nutrition articles in text format
+
+### Installation
+
+1. **Clone or download this repository**
+
+2. **Create and activate a virtual environment**
+   ```powershell
+   cd nutrition_kb_builder
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   ```
+
+3. **Install dependencies**
    ```
    pip install -r requirements.txt
    ```
 
-2. Set up Qdrant:
-   - Create an account at [Qdrant Cloud](https://cloud.qdrant.io/)
-   - Create a new cluster (or use a local installation)
-   - Generate an API key from your Qdrant dashboard
+4. **Create .env file**
+   ```
+   cp .env.example .env
+   ```
+   Then edit the .env file with your API keys and configuration.
 
-3. Set up Google AI:
-   - Create an account at [Google AI Studio](https://makersuite.google.com/)
-   - Create an API key in your Google AI Studio account
+## Configuration
 
-4. Configure the application:
-   - Copy `.env.example` to `.env`
-   - Edit `.env` with your Qdrant and Gemini API credentials
+Edit the `.env` file with your API keys and settings:
 
-## Usage
+```
+# Qdrant Configuration
+QDRANT_URL="https://YOUR-QDRANT-INSTANCE.api.qdrant.tech/v1"
+QDRANT_API_KEY="your_qdrant_api_key_here"
 
-### Embedding Nutrition Articles
+# Google Gemini API Configuration
+GEMINI_API_KEY="your_gemini_api_key_here"
 
-To embed nutrition articles into Qdrant:
+# Collection Settings
+COLLECTION_NAME="nutrition_knowledge"
+VECTOR_SIZE="768"
+CHUNK_SIZE="1000"
 
-```bash
+# Data Paths
+NUTRITION_DATA_PATH="../Nutrition_data"
+METADATA_FILE="nutrition_topics.json"
+```
+
+## Creating and Updating Embeddings
+
+The nutrition_embedder.py script processes your nutrition articles, chunks them into semantically meaningful pieces, and uploads them to Qdrant.
+
+### Basic Usage
+
+```
 python nutrition_embedder.py
 ```
 
-If you need to reset the collection first:
+### Options
 
-```bash
-python nutrition_embedder.py --reset
+- `--reset`: Deletes the existing collection and recreates it
+- `--log`: Enables detailed logging of the embedding process
+
+### Workflow
+
+1. Place your nutrition articles in the folder specified by `NUTRITION_DATA_PATH`
+2. Run the embedder script to process and upload them
+3. Check the log file to confirm successful processing
+
+## Testing the Search
+
+Use the nutrition_search.py script to test searching the knowledge base:
+
+```
+python nutrition_search.py --query "What are the health benefits of the Mediterranean diet?"
 ```
 
-### Testing Search
+This will:
+1. Search the Qdrant database for relevant information
+2. Use the Gemini API to synthesize a coherent answer
+3. Format the response with source attribution
 
-To test searching the knowledge base:
+## Integrating with the Chat Interface
 
-```bash
-python search_test.py
+Run the update_chatbot.py script to integrate the knowledge base with your chat interface:
+
+```
+python update_chatbot.py
 ```
 
-This will start an interactive search session. You can also do a single search:
+This will:
+1. Create/update the knowledgeBase.js module
+2. Modify chat.js to use the knowledge base for nutrition queries
+3. Update UI components to display source attributions
+4. Set up the backend to connect with Qdrant
 
-```bash
-python search_test.py --query "benefits of mediterranean diet" --limit 3
-```
+After running this script, the same .env file settings must be copied to your chat application's environment.
 
-### Updating Your Chat Application
+## Troubleshooting
 
-To integrate the Qdrant knowledge base with your IS 2025 project:
+### No Search Results
 
-```bash
-python update_chatbot.py --is2025 "../IS 2025"
-```
+If searches return no results:
+1. Verify that your embeddings were created successfully
+2. Check that your Qdrant and Gemini API keys are correct
+3. Try running `nutrition_search.py` with a simple query
 
-## Data Format
+### API Errors
 
-The embedder expects nutrition articles in text format (`*.txt`) and a metadata file (`nutrition_topics.json`) with the following structure:
+Check your API credentials and whether you've reached any usage limits.
 
-```json
-{
-  "articles": [
-    {
-      "filename": "mediterranean_diet.txt",
-      "title": "Mediterranean Diet",
-      "topics": ["heart health", "longevity", "olive oil"]
-    },
-    ...
-  ]
-}
-```
+### Integration Issues
 
-## Environment Variables
+If the chat interface isn't using the knowledge base:
+1. Make sure you've run `update_chatbot.py`
+2. Check that your chat application has the correct environment variables
+3. Look for JavaScript console errors in the browser
 
-The application is configured using environment variables in the `.env` file:
+## License
 
-- `QDRANT_URL`: URL of your Qdrant instance
-- `QDRANT_API_KEY`: API key for Qdrant
-- `GEMINI_API_KEY`: API key for Google Gemini
-- `COLLECTION_NAME`: Name of your Qdrant collection
-- `VECTOR_SIZE`: Dimension of the embedding vectors
-- `CHUNK_SIZE`: Target token count per text chunk
-- `NUTRITION_DATA_PATH`: Path to your nutrition articles
-- `METADATA_FILE`: Filename of your metadata JSON file 
+This project is licensed under the MIT License - see the LICENSE file for details. 
