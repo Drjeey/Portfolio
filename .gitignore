@@ -1,6 +1,5 @@
 # Environment variables
 .env
-*.env.example
 
 # Logs
 logs
@@ -32,3 +31,5 @@ pids
 
 # Cache
 .cache/ 
+__pycache__/
+.venv/
