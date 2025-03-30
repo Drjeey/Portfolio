@@ -41,7 +41,7 @@ python update_chatbot.py
 ## Setup
 
 ### Prerequisites
-- Python 3.8 or higher
+- Python 3.11+ (Python 3.11.5 recommended)
 - A Qdrant account and API key
 - Google Gemini API key
 - Nutrition articles in text format

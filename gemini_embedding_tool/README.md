@@ -13,7 +13,10 @@ This tool:
 
 ## Setup
 
-1. **Install dependencies**
+1. **Requirements**
+   - Python 3.11+ (Python 3.11.5 recommended)
+
+2. **Install dependencies**
    ```
    pip install -r requirements.txt
    ```
