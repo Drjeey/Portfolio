@@ -1,14 +1,5 @@
 // api.js - Handles API communication with backend and AI models
 
-// Export GoogleGenerativeAI initialization
-export function initializeAI(apiKey, modelName, systemInstruction) {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    return genAI.getGenerativeModel({ 
-        model: modelName, 
-        systemInstruction: systemInstruction
-    });
-}
-
 // Check login status
 export async function checkLoginStatus() {
     try {
@@ -57,6 +48,25 @@ export async function fetchConversationHistory(conversationId) {
     } catch (error) {
         console.error("Error fetching conversation history:", error);
         throw error;
+    }
+}
+
+// Get message count for a conversation
+export async function getMessageCount(conversationId) {
+    if (!conversationId) return 0;
+    
+    try {
+        const response = await fetch(`backend.php?get_message_count=true&conversation_id=${conversationId}`);
+        if (response.ok) {
+            const data = await response.json();
+            return data.count || 0;
+        } else {
+            console.error("Error getting message count");
+            return 0;
+        }
+    } catch (error) {
+        console.error("Error getting message count:", error);
+        return 0;
     }
 }
 
@@ -135,6 +145,25 @@ export async function saveChatMessages(userMessage, botResponse, conversationId,
         return await response.json();
     } catch (error) {
         console.error("Error saving chat:", error);
+        throw error;
+    }
+}
+
+// Update conversation title
+export async function updateConversationTitle(newTitle, conversationId) {
+    try {
+        // Same implementation as renameConversationAPI but with a clearer name
+        console.log("Updating conversation title in database:", newTitle, "for ID:", conversationId);
+        
+        const response = await fetch("backend.php", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: `action=rename_conversation&conversation_id=${conversationId}&title=${encodeURIComponent(newTitle)}`
+        });
+        
+        return await response.json();
+    } catch (error) {
+        console.error("Error updating conversation title:", error);
         throw error;
     }
 } 

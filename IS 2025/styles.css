@@ -24,7 +24,11 @@
     border-right: 1px solid var(--light-grey);
     padding: 20px;
     background: var(--white);
-    overflow-y: auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .history-panel h3 {
@@ -36,8 +40,9 @@
 }
 
 .history-items {
-    max-height: calc(100vh - 100px);
+    flex: 1;
     overflow-y: auto;
+    margin-bottom: 15px;
 }
 
 /* Conversation items styling */
@@ -119,6 +124,28 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: relative;
+}
+
+.chat-header h2 {
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    margin-right: auto;
+}
+
+.logo-icon {
+    margin-right: 8px;
+    font-size: 24px;
+}
+
+.model-name {
+    font-size: 12px;
+    opacity: 0.8;
+    font-style: italic;
+    position: absolute;
+    bottom: 5px;
+    left: 55px;
 }
 
 .new-chat-btn {
@@ -262,14 +289,15 @@
 }
 
 .model .message-content {
-    background: var(--white);
+    background: #E3F2FD; /* Light blue background for bot messages */
     margin-right: auto;
     text-align: left;
     box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    color: #333; /* Darker text for readability */
 }
 
 .user .message-content {
-    background: var(--primary-blue);
+    background: #1565C0; /* Darker blue for user messages */
     color: var(--white);
     margin-left: auto;
     text-align: left;
@@ -306,11 +334,11 @@
 }
 
 .model .message-content ul, .model .message-content ol {
-    color: #000;
+    color: #333; /* Dark text for bot lists */
 }
 
 .user .message-content ul, .user .message-content ol {
-    color: #fff;
+    color: #fff; /* White text for user lists */
 }
 
 .message-content li {
@@ -322,15 +350,18 @@
 }
 
 .message-content pre {
-    background: rgba(0,0,0,0.05);
     padding: 10px;
     border-radius: 4px;
     overflow-x: auto;
     margin: 10px 0;
 }
 
+.model .message-content pre {
+    background: rgba(0,0,0,0.05); /* Light background for bot code blocks */
+}
+
 .user .message-content pre {
-    background: rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.1); /* Slightly lighter background for user code blocks */
 }
 
 .message-content code {
@@ -340,23 +371,28 @@
 }
 
 .model .message-content code {
-    background: rgba(0,0,0,0.05);
+    background: rgba(0,0,0,0.05); /* Light background for bot inline code */
+    color: #0D47A1; /* Dark blue for code in bot messages */
 }
 
 .user .message-content code {
-    background: rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.2); /* Slightly translucent background for user inline code */
+    color: #fff; /* White text for user code */
 }
 
 .message-content blockquote {
-    border-left: 3px solid rgba(0,0,0,0.2);
     padding-left: 10px;
     margin: 10px 0;
-    color: rgba(0,0,0,0.7);
+}
+
+.model .message-content blockquote {
+    border-left: 3px solid #90CAF9; /* Light blue border for bot quotes */
+    color: #455A64; /* Darker blue-gray for bot quotes */
 }
 
 .user .message-content blockquote {
-    border-left: 3px solid rgba(255,255,255,0.4);
-    color: rgba(255,255,255,0.9);
+    border-left: 3px solid rgba(255,255,255,0.6); /* Brighter border for user quotes */
+    color: rgba(255,255,255,0.9); /* Slightly dimmed white for user quotes */
 }
 
 .message-content h1, .message-content h2, .message-content h3,
@@ -376,7 +412,7 @@
 }
 
 .model .message-content a {
-    color: var(--primary-blue);
+    color: #1565C0; /* Darker blue links for bot messages */
 }
 
 .user .message-content a {
@@ -428,4 +464,61 @@
 
 .model p:last-child {
     margin-bottom: 0;
+}
+
+/* New conversation button in sidebar */
+.new-chat-btn.sidebar-btn {
+    width: 100%;
+    background-color: var(--primary-blue);
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    margin-bottom: 15px;
+    transition: background-color 0.2s;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.new-chat-btn.sidebar-btn:hover {
+    background-color: #2d6cca;
+}
+
+/* Logout button in sidebar */
+.logout-btn.sidebar-btn {
+    width: 100%;
+    background-color: transparent;
+    color: var(--red);
+    border: 2px solid var(--red);
+    padding: 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    text-decoration: none;
+    transition: all 0.2s;
+    font-weight: 600;
+    text-align: center;
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logout-btn.sidebar-btn:hover {
+    background-color: var(--red);
+    color: white;
+}
+
+.logout-icon {
+    margin-right: 8px;
+    font-size: 16px;
+}
+
+.btn-icon {
+    margin-right: 8px;
+    font-size: 16px;
 }

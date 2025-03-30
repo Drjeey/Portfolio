@@ -10,6 +10,10 @@ export function addMessageToUI(sender, message) {
     const messageDiv = document.createElement("div");
     messageDiv.className = sender;
     
+    // Create a message content container (bubble)
+    const contentDiv = document.createElement("div");
+    contentDiv.className = "message-content";
+    
     // Format message content using marked.js
     let formattedContent;
     
@@ -22,21 +26,25 @@ export function addMessageToUI(sender, message) {
             smartLists: true
         });
         
-        // Parse markdown
-        formattedContent = marked.parse(message);
+        // Parse markdown only for model responses
+        if (sender === "user") {
+            // Simple text for user messages
+            formattedContent = `<p>${message}</p>`;
+        } else {
+            // For model responses, use marked to handle rich formatting
+            formattedContent = marked.parse(message);
+        }
     } catch (error) {
         console.error("Error parsing markdown:", error);
         // Fallback to basic formatting
         formattedContent = `<p>${message.replace(/\n/g, '<br>')}</p>`;
     }
     
-    // Use standard paragraph for user messages
-    if (sender === "user") {
-        messageDiv.innerHTML = `<p>${message}</p>`;
-    } else {
-        // For model responses, use marked to handle rich formatting
-        messageDiv.innerHTML = formattedContent;
-    }
+    // Set the formatted content
+    contentDiv.innerHTML = formattedContent;
+    
+    // Append the content div to the message div
+    messageDiv.appendChild(contentDiv);
     
     // Add the message to the chat container
     const chatContainer = document.querySelector(".chat-messages");
@@ -87,7 +95,7 @@ export function showLoadingIndicator() {
     const chatContainer = document.querySelector(".chat-messages");
     const loaderDiv = document.createElement("div");
     loaderDiv.className = "loader";
-    loaderDiv.textContent = "Thinking...";
+    loaderDiv.textContent = "NutriGuide is thinking...";
     chatContainer.appendChild(loaderDiv);
     chatContainer.scrollTop = chatContainer.scrollHeight;
     return loaderDiv;
@@ -105,7 +113,12 @@ export function removeLoadingIndicator() {
 export function showErrorMessage() {
     const messageDiv = document.createElement("div");
     messageDiv.className = "model";
-    messageDiv.innerHTML = "<p>I apologize, but I'm having trouble processing your health question right now. Please try again or rephrase your question. Remember, for urgent medical concerns, please contact a healthcare professional directly.</p>";
+    
+    const contentDiv = document.createElement("div");
+    contentDiv.className = "message-content";
+    contentDiv.innerHTML = "<p>I apologize, but I'm having trouble processing your nutrition question right now. Please try again or rephrase your question.</p>";
+    
+    messageDiv.appendChild(contentDiv);
     
     const chatContainer = document.querySelector(".chat-messages");
     chatContainer.appendChild(messageDiv);
@@ -231,12 +244,12 @@ export function setActiveConversation(conversationId) {
 
 // Update document title
 export function updateDocumentTitle(title) {
-    document.title = `${title} - AI Assistant`;
+    document.title = `${title} - NutriGuide`;
 }
 
 // Get welcome message HTML
 export function getWelcomeMessageHTML(username) {
     return username !== 'User' 
-        ? `<div class="model"><p>Hi ${username}! I'm your health information assistant. How can I help you with your health questions today?</p></div>` 
-        : `<div class="model"><p>Hello! I'm your health information assistant. How can I help you with your health questions today?</p></div>`;
+        ? `<div class="model"><div class="message-content"><p>Hi ${username}! I'm NutriGuide, your personal nutrition assistant. How can I help you with your dietary and nutrition questions today?</p></div></div>` 
+        : `<div class="model"><div class="message-content"><p>Hello! I'm NutriGuide, your personal nutrition assistant. How can I help you with your dietary and nutrition questions today?</p></div></div>`;
 } 
