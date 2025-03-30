@@ -48,34 +48,113 @@
     </div>
     <!-- Notification container (will be populated by JavaScript) -->
     <div id="notification-container"></div>
-<script defer>
-    function checkLogin() {
-            fetch("backend.php")
-            .then(response => response.json())
-            .then(data => {
-                if (data.success === false && data.error === "Unauthorized") {
-                    window.location.href = "Form.php"; // Corrected to Form.php
-                }
-            })
-            .catch(() => window.location.href = "Form.php"); // Corrected to Form.php
-        }
-</script>
-    <!-- Load environment variables first -->
+
+    <!-- Hidden debug controls - for development only -->
+    <div class="debug-controls" style="position: fixed; right: 10px; bottom: 10px; z-index: 9999; display: none;">
+        <button id="debug-conversation-btn" style="background: #665CAC; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Debug Conversations</button>
+    </div>
+
+    <script defer>
+        function checkLogin() {
+                fetch("backend.php")
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success === false && data.error === "Unauthorized") {
+                        window.location.href = "Form.php"; // Corrected to Form.php
+                    }
+                })
+                .catch(() => window.location.href = "Form.php"); // Corrected to Form.php
+            }
+    </script>
+    <!-- Load sources data first to ensure it's available -->
+    <script src="js/data/sources-preloader.js"></script>
+
+    <!-- Load environment variables and main scripts -->
     <script src="env.php?v=<?php echo time(); ?>"></script>
     
     <!-- Wait for environment to be loaded before loading the app code -->
     <script>
-        // Make sure ENV is loaded before continuing
         document.addEventListener('DOMContentLoaded', function() {
             if (typeof window.ENV === 'undefined' || !window.ENV.GEMINI_API_KEY) {
                 console.error('Environment variables not loaded properly');
-                document.querySelector('.chat-messages').innerHTML += '<div class="model"><p>Error: Unable to connect to AI service. Please try again later.</p></div>';
+                document.querySelector('.chat-messages').innerHTML += '<div class="model"><div class="message-content"><p>Error: Unable to connect to AI service. Please try again later.</p></div></div>';
             }
         });
     </script>
-    <!-- Load Marked.js for Markdown parsing -->
+    
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- Then load the main application code with cache-busting -->
+    <!-- Import and use main.js as a module with cache busting -->
     <script type="module" src="main.js?v=<?php echo time(); ?>"></script>
+
+    <script>
+        // Development debug helpers
+        document.addEventListener('DOMContentLoaded', function() {
+            // Enable debug controls with keyboard shortcut (Ctrl+Shift+D)
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+                    const debugControls = document.querySelector('.debug-controls');
+                    if (debugControls) {
+                        debugControls.style.display = debugControls.style.display === 'none' ? 'block' : 'none';
+                    }
+                }
+            });
+            
+            // Add click handler for debug button
+            const debugBtn = document.getElementById('debug-conversation-btn');
+            if (debugBtn) {
+                debugBtn.addEventListener('click', function() {
+                    if (window.conversation && typeof window.conversation.debugConversationState === 'function') {
+                        window.conversation.debugConversationState();
+                    } else {
+                        console.log("Conversation module or debug function not available");
+                        console.log("window.currentConversationId =", window.currentConversationId);
+                    }
+                });
+            }
+        });
+    </script>
+
+    <!-- Preload nutrition sources -->
+    <script>
+        // Preload nutrition sources
+        async function preloadNutritionSources() {
+            try {
+                const response = await fetch('js/data/nutrition_sources.json');
+                if (response.ok) {
+                    const data = await response.json();
+                    window.NUTRITION_SOURCES = data;
+                    console.log("Successfully preloaded nutrition sources:", Object.keys(data.sources || data).length, "sources");
+                    return true;
+                } else {
+                    console.warn("Failed to preload nutrition sources, will try again later");
+                    return false;
+                }
+            } catch (error) {
+                console.error("Error preloading nutrition sources:", error);
+                return false;
+            }
+        }
+
+        // Initialize app after preloading resources
+        async function initApp() {
+            // Try to preload nutrition sources
+            await preloadNutritionSources();
+            
+            // Continue with app initialization
+            document.addEventListener('DOMContentLoaded', function() {
+                // Initialize the app when the DOM is fully loaded
+                console.log("DOM fully loaded, initializing app");
+                if (typeof initChatApp === 'function') {
+                    initChatApp();
+                }
+            });
+        }
+
+        // Start initialization
+        initApp();
+    </script>
+
+    <!-- JavaScript Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.0.2/marked.min.js"></script>
 </body>
 </html>

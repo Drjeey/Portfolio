@@ -44,6 +44,11 @@ function loadEnv($path) {
             }
             
             $env[$name] = $value;
+            
+            // Also set as environment variable for PHP scripts
+            putenv("$name=$value");
+            // Add to $_ENV superglobal
+            $_ENV[$name] = $value;
         }
     }
     
@@ -55,6 +60,28 @@ $envPath = __DIR__ . '/.env';
 
 // Load environment variables
 $env = loadEnv($envPath);
+
+// Important: Make sure these environment variables are always available even if .env fails
+$requiredEnvVars = [
+    'GEMINI_API_KEY',
+    'QDRANT_URL',
+    'QDRANT_API_KEY',
+    'COLLECTION_NAME'
+];
+
+foreach ($requiredEnvVars as $var) {
+    if (empty($_ENV[$var]) && !empty($env[$var])) {
+        $_ENV[$var] = $env[$var];
+        putenv("$var=" . $env[$var]);
+    }
+}
+
+// Log environment variables for debugging
+error_log("Loaded environment variables from .env:");
+error_log("GEMINI_API_KEY: " . (isset($_ENV['GEMINI_API_KEY']) ? 'SET' : 'NOT SET'));
+error_log("QDRANT_URL: " . (isset($_ENV['QDRANT_URL']) ? $_ENV['QDRANT_URL'] : 'NOT SET'));
+error_log("QDRANT_API_KEY: " . (isset($_ENV['QDRANT_API_KEY']) ? 'SET' : 'NOT SET'));
+error_log("COLLECTION_NAME: " . (isset($_ENV['COLLECTION_NAME']) ? $_ENV['COLLECTION_NAME'] : 'NOT SET'));
 
 // Get current username from session if available
 $username = isset($_SESSION['username']) ? $_SESSION['username'] : 'User';
@@ -71,6 +98,11 @@ echo "window.ENV = " . json_encode([
     'GEMINI_MODEL_NAME' => $env && isset($env['GEMINI_MODEL_NAME']) ? $env['GEMINI_MODEL_NAME'] : 'gemini-1.5-flash',
     'USER_INFO' => [
         'username' => $username
+    ],
+    'QDRANT_CONFIG' => [
+        'URL' => $env && isset($env['QDRANT_URL']) ? $env['QDRANT_URL'] : null,
+        'API_KEY' => $env && isset($env['QDRANT_API_KEY']) ? $env['QDRANT_API_KEY'] : null,
+        'COLLECTION_NAME' => $env && isset($env['COLLECTION_NAME']) ? $env['COLLECTION_NAME'] : 'nutrition_knowledge'
     ],
     'DEBUG_INFO' => [
         'env_file_exists' => file_exists($envPath),

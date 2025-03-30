@@ -39,8 +39,196 @@ if (!isset($_SESSION['user_id']) &&
     exit;
 }
 
-// Handle Signup & Login
-if ($_SERVER["REQUEST_METHOD"] == "POST") {
+// Handle incoming JSON requests
+if ($_SERVER["REQUEST_METHOD"] == "POST" && !isset($_POST['action'])) {
+    // Get the JSON data
+    $json = file_get_contents('php://input');
+    $data = json_decode($json, true);
+    
+    // Check if the data is valid JSON
+    if ($data === null) {
+        echo json_encode(["success" => false, "error" => "Invalid JSON"]);
+        exit;
+    }
+    
+    // Extract the action from the JSON data
+    $action = $data['action'] ?? '';
+    
+    // Handle the search knowledge base action
+    if ($action === 'searchKnowledgeBase') {
+        $query = $data['query'] ?? '';
+        $limit = $data['limit'] ?? 5;
+        
+        if (empty($query)) {
+            echo json_encode(['success' => false, 'message' => 'Query is required']);
+            exit;
+        }
+        
+        // Search the knowledge base
+        $results = searchKnowledgeBase($query, $limit);
+        
+        // Return the results
+        echo json_encode($results);
+        exit;
+    }
+    
+    // Handle saving a message to a conversation
+    if ($action === 'saveMessage') {
+        $user_id = $_SESSION['user_id'] ?? 0;
+        $user_message = $data['user_message'] ?? '';
+        $bot_message = $data['bot_message'] ?? '';
+        $conversation_id = $data['conversation_id'] ?? 'new';
+        $date = date("Y-m-d H:i:s");
+        
+        if (empty($user_message) || empty($bot_message)) {
+            echo json_encode(["success" => false, "error" => "Both user and bot messages are required"]);
+            exit;
+        }
+        
+        // If conversation_id is 'new', create a new conversation
+        if ($conversation_id === 'new') {
+            // Create a simple title from user message
+            $title = strlen($user_message) <= 40 ? 
+                $user_message : 
+                (substr($user_message, 0, 37) . '...');
+            
+            $stmt = $conn->prepare("INSERT INTO conversations (user_id, title) VALUES (?, ?)");
+            $stmt->bind_param("is", $user_id, $title);
+            
+            if (!$stmt->execute()) {
+                echo json_encode(["success" => false, "error" => "Failed to create conversation: " . $stmt->error]);
+                exit;
+            }
+            
+            $conversation_id = $conn->insert_id;
+            $stmt->close();
+            
+            // Set title flag to indicate a title was generated
+            $titleGenerated = true;
+        } else {
+            // Check if this is the first message in an existing conversation
+            $count_stmt = $conn->prepare("SELECT COUNT(*) as count FROM chats WHERE conversation_id = ?");
+            $count_stmt->bind_param("i", $conversation_id);
+            $count_stmt->execute();
+            $result = $count_stmt->get_result();
+            $count_data = $result->fetch_assoc();
+            $count_stmt->close();
+            
+            if ($count_data['count'] == 0) {
+                // This is the first message - update the title
+                $title = strlen($user_message) <= 40 ? 
+                    $user_message : 
+                    (substr($user_message, 0, 37) . '...');
+                
+                $update_title_stmt = $conn->prepare("UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?");
+                $update_title_stmt->bind_param("sis", $title, $conversation_id, $user_id);
+                $update_title_stmt->execute();
+                $update_title_stmt->close();
+                
+                // Set title flag to indicate a title was generated
+                $titleGenerated = true;
+            } else {
+                $titleGenerated = false;
+            }
+        }
+        
+        // Save the message
+        $stmt = $conn->prepare("INSERT INTO chats (user_id, conversation_id, date, user_message, bot_message) VALUES (?, ?, ?, ?, ?)");
+        $stmt->bind_param("iisss", $user_id, $conversation_id, $date, $user_message, $bot_message);
+        
+        if ($stmt->execute()) {
+            // Update conversation's updated_at timestamp
+            $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW() WHERE id = ?");
+            $update_stmt->bind_param("i", $conversation_id);
+            $update_stmt->execute();
+            $update_stmt->close();
+            
+            // Get the title if needed
+            $currentTitle = '';
+            if (isset($title)) {
+                $currentTitle = $title;
+            } else {
+                $title_stmt = $conn->prepare("SELECT title FROM conversations WHERE id = ?");
+                $title_stmt->bind_param("i", $conversation_id);
+                $title_stmt->execute();
+                $title_result = $title_stmt->get_result();
+                if ($title_row = $title_result->fetch_assoc()) {
+                    $currentTitle = $title_row['title'];
+                }
+                $title_stmt->close();
+            }
+            
+            echo json_encode([
+                "success" => true,
+                "conversation_id" => $conversation_id,
+                "title" => $currentTitle,
+                "title_generated" => $titleGenerated ?? false
+            ]);
+        } else {
+            echo json_encode(["success" => false, "error" => "Error saving message: " . $stmt->error]);
+        }
+        $stmt->close();
+        exit;
+    }
+    
+    // Handle new conversation creation
+    if ($action === 'new_conversation') {
+        $user_id = $_SESSION['user_id'] ?? 0;
+        $title = $data['title'] ?? 'New Conversation';
+        
+        $stmt = $conn->prepare("INSERT INTO conversations (user_id, title) VALUES (?, ?)");
+        $stmt->bind_param("is", $user_id, $title);
+        
+        if ($stmt->execute()) {
+            $conversation_id = $conn->insert_id;
+            echo json_encode([
+                "success" => true, 
+                "conversation_id" => $conversation_id,
+                "title" => $title
+            ]);
+        } else {
+            echo json_encode(["success" => false, "error" => "Failed to create conversation: " . $stmt->error]);
+        }
+        $stmt->close();
+        exit;
+    }
+    
+    // Handle generating a title
+    if ($action === 'generateTitle') {
+        $user_id = $_SESSION['user_id'] ?? 0;
+        $conversation_id = $data['conversation_id'] ?? '';
+        $user_message = $data['user_message'] ?? '';
+        $bot_message = $data['bot_message'] ?? '';
+        
+        if (empty($user_message) || empty($conversation_id)) {
+            echo json_encode(["success" => false, "error" => "User message and conversation ID are required"]);
+            exit;
+        }
+        
+        // Create a simple title from the user message
+        $title = strlen($user_message) <= 40 ? 
+            $user_message : 
+            (substr($user_message, 0, 37) . '...');
+        
+        // Update the conversation title
+        $stmt = $conn->prepare("UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?");
+        $stmt->bind_param("sis", $title, $conversation_id, $user_id);
+        
+        if ($stmt->execute()) {
+            echo json_encode([
+                "success" => true,
+                "title" => $title
+            ]);
+        } else {
+            echo json_encode(["success" => false, "error" => "Failed to update title: " . $stmt->error]);
+        }
+        $stmt->close();
+        exit;
+    }
+}
+
+// Handle Signup & Login with form data
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
     $action = $_POST['action'] ?? '';
 
     if ($action == "signup") {
@@ -115,7 +303,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         exit;
     }
     
-    // Create a new conversation
+    // Create a new conversation (form-based version)
     elseif ($action == "new_conversation") {
         $user_id = $_SESSION['user_id'];
         $title = $_POST['title'] ?? 'New Conversation';
@@ -183,27 +371,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 
-// Helper function to update conversation history (now directly in conversations table)
-function updateConversationSummary($conn, $conversation_id, $newSummary = null) {
-    if ($newSummary === null) {
-        return null; // If no summary provided, nothing to update
-    }
-    
-    // Update the conversation summary
-    $update_stmt = $conn->prepare("
-        UPDATE conversations 
-        SET conversation_summary = ? 
-        WHERE id = ?
-    ");
-    $update_stmt->bind_param("si", $newSummary, $conversation_id);
-    $update_stmt->execute();
-    $update_stmt->close();
-    
-    return $newSummary;
-}
-
 // Handle chat saving with conversation tracking
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !isset($_POST['action'])) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !isset($_POST['action']) && !isset($_GET['create_conversation']) && !isset($_GET['delete_conversation']) && !isset($_GET['rename_conversation'])) {
     $user_id = $_SESSION['user_id'];
     $user_message = $_POST['user_message'] ?? '';
     $bot_message = $_POST['bot_message'] ?? '';
@@ -257,6 +426,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
         $stmt->close();
     }
 
+    // Check if we're saving a message (both user_message and bot_message should be provided)
     if (!empty($user_message) && !empty($bot_message)) {
         $stmt = $conn->prepare("INSERT INTO chats (user_id, conversation_id, date, user_message, bot_message) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("iisss", $user_id, $conversation_id, $date, $user_message, $bot_message);
@@ -281,7 +451,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
         }
         $stmt->close();
     } else {
-        echo json_encode(["success" => false, "error" => "Both user and bot messages are required"]);
+        // Only check for message content if we're actually trying to save a message
+        if (isset($_POST['user_message']) || isset($_POST['bot_message'])) {
+            echo json_encode(["success" => false, "error" => "Both user and bot messages are required"]);
+        } else {
+            echo json_encode([
+                "success" => true,
+                "conversation_id" => $conversation_id
+            ]);
+        }
     }
     exit;
 }
@@ -345,29 +523,117 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && isset
 }
 
 // Handle user-specific conversation list
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && isset($_GET['list']) && $_GET['list'] === 'conversations') {
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_SESSION['user_id']) && (isset($_GET['list']) && $_GET['list'] === 'conversations' || isset($_GET['conversations']))) {
     $user_id = $_SESSION['user_id'];
-    $stmt = $conn->prepare("
-        SELECT 
-            c.id, 
-            c.title, 
-            c.created_at, 
-            c.updated_at,
-            (SELECT COUNT(*) FROM chats WHERE conversation_id = c.id) as message_count
-        FROM conversations c
-        WHERE c.user_id = ?
-        ORDER BY c.updated_at DESC
-    ");
-    $stmt->bind_param("i", $user_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
     
-    $conversations = [];
-    while ($row = $result->fetch_assoc()) {
-        $conversations[] = $row;
+    // Enhanced debugging - log everything we can
+    error_log("==== CONVERSATIONS API DEBUG START ====");
+    error_log("PHP Version: " . phpversion());
+    error_log("Current time: " . date('Y-m-d H:i:s'));
+    error_log("Request: " . $_SERVER['REQUEST_URI']);
+    error_log("User ID: " . $user_id);
+    error_log("Session data: " . print_r($_SESSION, true));
+    
+    try {
+        // Check database connection status
+        if (!$conn->ping()) {
+            error_log("ERROR: Database connection lost, attempting to reconnect");
+            $conn->close();
+            $conn = getDbConnection();
+            if (!$conn) {
+                error_log("FATAL: Failed to reconnect to database");
+                echo json_encode([
+                    "success" => false, 
+                    "error" => "Database connection lost",
+                    "debug_info" => "See server logs for details"
+                ]);
+                exit;
+            }
+        }
+        
+        error_log("Database connection OK: " . $conn->host_info);
+        
+        // Prepare SQL statement with explicit error handling
+        $sql = "
+            SELECT 
+                c.id, 
+                c.title, 
+                c.created_at as timestamp, 
+                c.updated_at,
+                (SELECT COUNT(*) FROM chats WHERE conversation_id = c.id) as message_count
+            FROM conversations c
+            WHERE c.user_id = ?
+            ORDER BY c.updated_at DESC
+        ";
+        
+        error_log("SQL query: " . $sql);
+        
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            error_log("ERROR: SQL prepare failed: " . $conn->error);
+            echo json_encode([
+                "success" => false, 
+                "error" => "Database query error: " . $conn->error,
+                "query" => $sql
+            ]);
+            exit;
+        }
+        
+        $stmt->bind_param("i", $user_id);
+        
+        // Execute statement with error handling
+        $exec_result = $stmt->execute();
+        if (!$exec_result) {
+            error_log("ERROR: SQL execute failed: " . $stmt->error);
+            echo json_encode([
+                "success" => false, 
+                "error" => "Failed to execute query: " . $stmt->error
+            ]);
+            exit;
+        }
+        
+        error_log("SQL executed successfully");
+        
+        $result = $stmt->get_result();
+        error_log("Result fetch mode: " . $result->type);
+        error_log("Rows returned: " . $result->num_rows);
+        
+        $conversations = [];
+        while ($row = $result->fetch_assoc()) {
+            error_log("Row data: " . print_r($row, true));
+            $conversations[] = $row;
+        }
+        
+        $response = [
+            "success" => true, 
+            "conversations" => $conversations,
+            "user_id" => $user_id,
+            "timestamp" => time(),
+            "debug" => [
+                "count" => count($conversations),
+                "php_version" => phpversion(),
+                "mysql_version" => $conn->server_info
+            ]
+        ];
+        
+        error_log("Response prepared: " . substr(json_encode($response), 0, 500) . "...");
+        error_log("==== CONVERSATIONS API DEBUG END ====");
+        
+        echo json_encode($response);
+    } catch (Exception $e) {
+        error_log("EXCEPTION: " . $e->getMessage());
+        error_log("Trace: " . $e->getTraceAsString());
+        
+        echo json_encode([
+            "success" => false, 
+            "error" => "Server error: " . $e->getMessage(),
+            "debug_info" => "Exception at " . $e->getFile() . ":" . $e->getLine()
+        ]);
     }
     
-    echo json_encode(["success" => true, "conversations" => $conversations]);
+    if (isset($stmt)) {
+        $stmt->close();
+    }
     exit;
 }
 
@@ -506,18 +772,334 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get_message_count']) &&
     exit;
 }
 
-// Handle knowledge base search request
-if (isset($_GET['action']) && $_GET['action'] === 'search_knowledge_base' && isset($_GET['query'])) {
-    // Check if user is logged in
-    if (!isset($_SESSION['user_id'])) {
-        echo json_encode(['success' => false, 'error' => 'User not logged in']);
+// Handle POST JSON payload for searchKnowledgeBase
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_SERVER["CONTENT_TYPE"]) && 
+    (strpos($_SERVER["CONTENT_TYPE"], "application/json") !== false)) {
+    // Get the raw POST data and decode it
+    $jsonData = file_get_contents('php://input');
+    $data = json_decode($jsonData, true);
+    
+    // Check if this is a knowledge base search request
+    if (isset($data['action']) && $data['action'] === 'searchKnowledgeBase') {
+        $query = $data['query'] ?? '';
+        $limit = $data['limit'] ?? 5;
+        
+        if (empty($query)) {
+            echo json_encode(['success' => false, 'message' => 'Query is required']);
+            exit;
+        }
+        
+        error_log("POST JSON request for knowledge base search: $query");
+        
+        // Directly call the search function
+        $results = searchKnowledgeBase($query, intval($limit));
+        
+        // Return the results
+        echo json_encode($results);
+        exit;
+    }
+}
+
+// Test Qdrant connectivity (for debugging)
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['test_qdrant'])) {
+    header('Content-Type: application/json');
+    
+    $qdrantUrl = getenv('QDRANT_URL');
+    $qdrantApiKey = getenv('QDRANT_API_KEY');
+    $collectionName = getenv('COLLECTION_NAME');
+    
+    $debug = [
+        'env_vars' => [
+            'QDRANT_URL' => $qdrantUrl ? 'Set (' . $qdrantUrl . ')' : 'Not set',
+            'QDRANT_API_KEY' => $qdrantApiKey ? 'Set (hidden for security)' : 'Not set',
+            'COLLECTION_NAME' => $collectionName ?: 'Not set'
+        ],
+        'connection_test' => null
+    ];
+    
+    // Test connection to Qdrant if we have the URL and API key
+    if ($qdrantUrl && $qdrantApiKey) {
+        $ch = curl_init();
+        
+        // Clean the URL
+        $qdrantUrl = rtrim($qdrantUrl, '/');
+        $collectionEndpoint = "{$qdrantUrl}/collections";
+        
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $collectionEndpoint,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'api-key: ' . $qdrantApiKey
+            ]
+        ]);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        
+        if (curl_errno($ch)) {
+            $debug['connection_test'] = [
+                'success' => false,
+                'error' => 'cURL error: ' . curl_error($ch)
+            ];
+        } else {
+            $debug['connection_test'] = [
+                'success' => $httpCode === 200,
+                'http_code' => $httpCode,
+                'response' => json_decode($response, true)
+            ];
+        }
+        
+        curl_close($ch);
+    } else {
+        $debug['connection_test'] = [
+            'success' => false,
+            'error' => 'Missing Qdrant URL or API key'
+        ];
+    }
+    
+    echo json_encode($debug, JSON_PRETTY_PRINT);
+    exit;
+}
+
+// Handle searchKnowledgeBase GET request 
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'searchKnowledgeBase') {
+    header('Content-Type: application/json');
+    
+    $query = $_GET['query'] ?? '';
+    $limit = $_GET['limit'] ?? 5;
+    
+    if (empty($query)) {
+        echo json_encode(['success' => false, 'message' => 'Query is required']);
         exit;
     }
     
-    $query = $_GET['query'];
-    $results = searchKnowledgeBase($query);
+    error_log("GET request for knowledge base search: $query");
     
-    echo json_encode(['success' => true, 'results' => $results]);
+    // Perform the search with proper params
+    $results = searchKnowledgeBase($query, intval($limit));
+    
+    // Return the results directly
+    echo json_encode($results);
+    exit;
+}
+
+// Handle creating a new conversation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && isset($_GET['create_conversation'])) {
+    header('Content-Type: application/json');
+    $user_id = $_SESSION['user_id'];
+    
+    // Get request body
+    $requestBody = file_get_contents('php://input');
+    $data = json_decode($requestBody, true);
+    
+    // Default title if not provided
+    $title = isset($data['title']) ? $data['title'] : 'New Conversation';
+    
+    // Debug logging
+    error_log("Creating new conversation with title: " . $title . " for user: " . $user_id);
+    
+    // Make sure database connection is valid
+    if (!$conn->ping()) {
+        error_log("Database connection lost, attempting to reconnect");
+        $conn->close();
+        $conn = getDbConnection();
+        if (!$conn) {
+            error_log("Failed to reconnect to database");
+            echo json_encode(['success' => false, 'error' => 'Database connection error']);
+            exit;
+        }
+    }
+    
+    // Prepare statement
+    $stmt = $conn->prepare("INSERT INTO conversations (user_id, title, created_at, updated_at) VALUES (?, ?, NOW(), NOW())");
+    
+    if (!$stmt) {
+        error_log("Prepare failed: " . $conn->error);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $conn->error]);
+        exit;
+    }
+    
+    $stmt->bind_param('is', $user_id, $title);
+    
+    // Execute statement
+    if (!$stmt->execute()) {
+        error_log("Execute failed: " . $stmt->error);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $stmt->error]);
+        exit;
+    }
+    
+    $conversation_id = $stmt->insert_id;
+    $stmt->close();
+    
+    // Return the new conversation ID
+    echo json_encode([
+        'success' => true,
+        'conversation_id' => $conversation_id,
+        'title' => $title
+    ]);
+    exit;
+}
+
+// Handle deleting a conversation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && isset($_GET['delete_conversation'])) {
+    header('Content-Type: application/json');
+    $user_id = $_SESSION['user_id'];
+    
+    // Get request body
+    $requestBody = file_get_contents('php://input');
+    $data = json_decode($requestBody, true);
+    
+    // Check required parameters
+    if (!isset($data['conversation_id'])) {
+        echo json_encode(['success' => false, 'error' => 'Missing conversation_id parameter']);
+        exit;
+    }
+    
+    $conversation_id = $data['conversation_id'];
+    
+    // Debug logging
+    error_log("Deleting conversation " . $conversation_id . " for user: " . $user_id);
+    
+    // Make sure database connection is valid
+    if (!$conn->ping()) {
+        error_log("Database connection lost, attempting to reconnect");
+        $conn->close();
+        $conn = getDbConnection();
+        if (!$conn) {
+            error_log("Failed to reconnect to database");
+            echo json_encode(['success' => false, 'error' => 'Database connection error']);
+            exit;
+        }
+    }
+    
+    // Start transaction
+    $conn->begin_transaction();
+    
+    try {
+        // First delete messages in the conversation
+        $stmt = $conn->prepare("DELETE FROM chats WHERE conversation_id = ? AND user_id = ?");
+        
+        if (!$stmt) {
+            throw new Exception("Prepare failed: " . $conn->error);
+        }
+        
+        $stmt->bind_param('ii', $conversation_id, $user_id);
+        
+        if (!$stmt->execute()) {
+            throw new Exception("Execute failed: " . $stmt->error);
+        }
+        
+        $stmt->close();
+        
+        // Then delete the conversation
+        $stmt = $conn->prepare("DELETE FROM conversations WHERE id = ? AND user_id = ?");
+        
+        if (!$stmt) {
+            throw new Exception("Prepare failed: " . $conn->error);
+        }
+        
+        $stmt->bind_param('ii', $conversation_id, $user_id);
+        
+        if (!$stmt->execute()) {
+            throw new Exception("Execute failed: " . $stmt->error);
+        }
+        
+        // Check if the conversation was deleted
+        if ($stmt->affected_rows == 0) {
+            throw new Exception("Conversation not found or not owned by user");
+        }
+        
+        $stmt->close();
+        
+        // Commit transaction
+        $conn->commit();
+        
+        // Return success
+        echo json_encode([
+            'success' => true,
+            'conversation_id' => $conversation_id
+        ]);
+    } catch (Exception $e) {
+        // Rollback transaction
+        $conn->rollback();
+        
+        error_log("Error deleting conversation: " . $e->getMessage());
+        
+        echo json_encode([
+            'success' => false,
+            'error' => $e->getMessage()
+        ]);
+    }
+    
+    exit;
+}
+
+// Handle renaming a conversation
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && isset($_GET['rename_conversation'])) {
+    header('Content-Type: application/json');
+    $user_id = $_SESSION['user_id'];
+    
+    // Get request body
+    $requestBody = file_get_contents('php://input');
+    $data = json_decode($requestBody, true);
+    
+    // Check required parameters
+    if (!isset($data['conversation_id']) || !isset($data['title'])) {
+        echo json_encode(['success' => false, 'error' => 'Missing required parameters']);
+        exit;
+    }
+    
+    $conversation_id = $data['conversation_id'];
+    $title = $data['title'];
+    
+    // Debug logging
+    error_log("Renaming conversation " . $conversation_id . " to: " . $title . " for user: " . $user_id);
+    
+    // Make sure database connection is valid
+    if (!$conn->ping()) {
+        error_log("Database connection lost, attempting to reconnect");
+        $conn->close();
+        $conn = getDbConnection();
+        if (!$conn) {
+            error_log("Failed to reconnect to database");
+            echo json_encode(['success' => false, 'error' => 'Database connection error']);
+            exit;
+        }
+    }
+    
+    // Prepare statement to update conversation title
+    $stmt = $conn->prepare("UPDATE conversations SET title = ?, updated_at = NOW() WHERE id = ? AND user_id = ?");
+    
+    if (!$stmt) {
+        error_log("Prepare failed: " . $conn->error);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $conn->error]);
+        exit;
+    }
+    
+    $stmt->bind_param('sii', $title, $conversation_id, $user_id);
+    
+    // Execute statement
+    if (!$stmt->execute()) {
+        error_log("Execute failed: " . $stmt->error);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $stmt->error]);
+        exit;
+    }
+    
+    // Check if the conversation was updated
+    if ($stmt->affected_rows == 0) {
+        echo json_encode(['success' => false, 'error' => 'Conversation not found or not owned by user']);
+        exit;
+    }
+    
+    $stmt->close();
+    
+    // Return success
+    echo json_encode([
+        'success' => true,
+        'conversation_id' => $conversation_id,
+        'title' => $title
+    ]);
     exit;
 }
 
@@ -527,112 +1109,485 @@ $conn->close();
  * Search the nutrition knowledge base
  * 
  * @param string $query User's query
+ * @param int $limit Maximum number of results to return
  * @return array Search results
  */
-function searchKnowledgeBase($query) {
-    // Qdrant configuration
+function searchKnowledgeBase($query, $topK = 5) {
+    error_log("INFO: Starting knowledge base search for query: " . $query);
+    
+    // Initialize return data structure
+    $data = [
+        'results' => [],
+        'answer' => '',
+        'query' => $query
+    ];
+    
+    // Get configuration from environment variables
+    $envFile = __DIR__ . '/.env';
+    if (file_exists($envFile)) {
+        $envVars = parse_ini_file($envFile);
+        foreach ($envVars as $key => $value) {
+            putenv("$key=$value");
+        }
+        error_log("INFO: Loaded environment variables from .env file");
+    } else {
+        error_log("WARNING: No .env file found at $envFile, using existing environment");
+    }
+    
+    // Qdrant configuration parameters from ENV
     $qdrantUrl = getenv('QDRANT_URL');
     $qdrantApiKey = getenv('QDRANT_API_KEY');
-    $collectionName = getenv('COLLECTION_NAME') ?: 'nutrition_knowledge';
+    $geminiApiKey = getenv('GEMINI_API_KEY');
+    $collectionName = getenv('COLLECTION_NAME');
     
-    // Get embedding for query using Gemini API
+    // Log configuration for debugging
+    error_log("CONFIG: Qdrant URL: " . ($qdrantUrl ? $qdrantUrl : "NOT SET"));
+    error_log("CONFIG: Qdrant API Key: " . ($qdrantApiKey ? "PROVIDED" : "NOT SET"));
+    error_log("CONFIG: Gemini API Key: " . ($geminiApiKey ? "PROVIDED" : "NOT SET"));
+    error_log("CONFIG: Collection Name: " . ($collectionName ? $collectionName : "NOT SET"));
+    
+    // Check if configuration is complete
+    if (!$qdrantUrl) {
+        error_log("ERROR: Qdrant URL not set. Check environment variables.");
+        return $data;
+    }
+    
+    if (!$qdrantApiKey) {
+        error_log("ERROR: Qdrant API key not set. Check environment variables.");
+        return $data;
+    }
+    
+    if (!$geminiApiKey) {
+        error_log("ERROR: Gemini API key not set. Check environment variables.");
+        return $data;
+    }
+    
+    if (!$collectionName) {
+        error_log("INFO: Collection name not set, using default 'nutrition_knowledge'");
+        $collectionName = "nutrition_knowledge";
+    }
+    
+    // Ensure Qdrant URL has no trailing slash
+    $qdrantUrl = rtrim($qdrantUrl, '/');
+    
+    // Step 1: Get embedding for query using Gemini API
+    error_log("INFO: Getting embedding for query...");
     $embedding = getGeminiEmbedding($query);
     
     if (!$embedding) {
-        return [];
+        error_log("ERROR: Failed to get embedding for query");
+        return $data;
     }
     
-    // Search Qdrant using the embedding
-    $searchData = [
+    error_log("INFO: Got embedding with " . count($embedding) . " dimensions");
+    
+    // Step 2: Search Qdrant with the embedding - closely match Python implementation
+    error_log("INFO: Searching Qdrant collection: " . $collectionName);
+    
+    $searchUrl = "{$qdrantUrl}/collections/{$collectionName}/points/search";
+    error_log("INFO: Search URL: " . $searchUrl);
+    
+    $searchPayload = [
         'vector' => $embedding,
-        'limit' => 3, // Return top 3 results
+        'limit' => $topK,
         'with_payload' => true
     ];
     
-    $curl = curl_init();
-    curl_setopt_array($curl, [
-        CURLOPT_URL => $qdrantUrl . "/collections/{$collectionName}/points/search",
+    $headers = [
+        'Content-Type: application/json'
+    ];
+    
+    // Add API key if provided - exactly like the Python code
+    if ($qdrantApiKey) {
+        $headers[] = 'api-key: ' . $qdrantApiKey;
+    }
+    
+    error_log("INFO: Search payload: vector size=" . count($embedding) . ", limit=" . $topK);
+    error_log("INFO: Headers: " . implode(', ', $headers));
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $searchUrl,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => json_encode($searchData),
-        CURLOPT_HTTPHEADER => [
-            'Content-Type: application/json',
-            'Api-Key: ' . $qdrantApiKey
-        ]
+        CURLOPT_POSTFIELDS => json_encode($searchPayload),
+        CURLOPT_HTTPHEADER => $headers,
+        CURLOPT_TIMEOUT => 30
     ]);
     
-    $response = curl_exec($curl);
-    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-    curl_close($curl);
+    // Enable verbose logging
+    curl_setopt($ch, CURLOPT_VERBOSE, true);
+    $verbose = fopen('php://temp', 'w+');
+    curl_setopt($ch, CURLOPT_STDERR, $verbose);
     
-    if ($httpCode != 200) {
-        error_log("Qdrant search failed with HTTP {$httpCode}: {$response}");
-        return [];
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    // Get verbose log
+    rewind($verbose);
+    $verboseLog = stream_get_contents($verbose);
+    error_log("VERBOSE CURL: " . $verboseLog);
+    
+    // Check for errors
+    if ($httpCode !== 200) {
+        error_log("ERROR: Qdrant search failed with HTTP code " . $httpCode);
+        error_log("ERROR: Response: " . substr($response, 0, 1000));
+        
+        if (curl_errno($ch)) {
+            error_log("ERROR: cURL error: " . curl_error($ch));
+        }
+        
+        curl_close($ch);
+        return $data;
     }
     
+    curl_close($ch);
+    
+    // Parse response
     $searchResult = json_decode($response, true);
     
-    if ($searchResult && isset($searchResult['result'])) {
-        return $searchResult['result'];
+    if (!$searchResult) {
+        error_log("ERROR: Failed to parse Qdrant response: " . substr($response, 0, 1000));
+        error_log("ERROR: JSON decode error: " . json_last_error_msg());
+        return $data;
     }
     
-    return [];
+    // Extract results - check both 'result' and 'hits' like the Python code
+    $hits = [];
+    if (isset($searchResult['result'])) {
+        $hits = $searchResult['result'];
+        error_log("INFO: Found results in 'result' field");
+    } elseif (isset($searchResult['hits'])) {
+        $hits = $searchResult['hits'];
+        error_log("INFO: Found results in 'hits' field");
+    } else {
+        error_log("ERROR: No results field found in response. Keys: " . implode(', ', array_keys($searchResult)));
+        error_log("ERROR: Response structure: " . json_encode($searchResult, JSON_PRETTY_PRINT));
+        return $data;
+    }
+    
+    $resultCount = count($hits);
+    error_log("INFO: Found " . $resultCount . " results from Qdrant search");
+    
+    if ($resultCount === 0) {
+        error_log("INFO: No results found for query: " . $query);
+        return $data;
+    }
+    
+    // Process the results
+    $processedResults = [];
+    
+    foreach ($hits as $hit) {
+        $resultData = ['score' => $hit['score'] ?? 0];
+        
+        if (isset($hit['payload'])) {
+            $payload = $hit['payload'];
+            
+            foreach ($payload as $key => $value) {
+                $resultData[$key] = $value;
+                if ($key === 'title') {
+                    error_log("INFO: Found result with title: " . $value);
+                }
+            }
+            
+            // Skip results with no text
+            if (!isset($resultData['text']) || empty($resultData['text'])) {
+                error_log("WARN: Skipping result with no text");
+                continue;
+            }
+            
+            // If no title but has text, create a title from text
+            if (!isset($resultData['title']) && isset($resultData['text'])) {
+                $resultData['title'] = substr($resultData['text'], 0, 50) . "...";
+            }
+            
+            $processedResults[] = $resultData;
+        } else {
+            error_log("WARN: Result has no payload");
+        }
+    }
+    
+    // Update the results in the return data
+    $data['results'] = $processedResults;
+    
+    // Step 3: Synthesize an answer if we have results
+    if (count($processedResults) > 0) {
+        error_log("INFO: Synthesizing answer from " . count($processedResults) . " results");
+        
+        // Construct context from search results
+        $context = '';
+        foreach ($processedResults as $index => $result) {
+            $context .= "Source " . ($index + 1) . " (from " . $result['title'] . "):\n" . $result['text'] . "\n\n";
+        }
+        
+        $answer = synthesizeAnswer($query, $context, $processedResults);
+        
+        if ($answer) {
+            $data['answer'] = $answer;
+            error_log("INFO: Successfully synthesized answer");
+        } else {
+            error_log("ERROR: Failed to synthesize answer");
+        }
+    }
+    
+    return $data;
+}
+
+// Helper function to sanitize a string for use as a filename
+function sanitizeFilename($string) {
+    // Replace spaces with underscores and remove special characters
+    $string = preg_replace('/[^a-zA-Z0-9\s]/', '', $string);
+    $string = str_replace(' ', '_', $string);
+    $string = strtolower($string);
+    return $string;
 }
 
 /**
- * Get embedding for text using Gemini API
+ * Synthesize an answer from search results using Gemini API
  * 
- * @param string $text The text to embed
- * @return array|null Vector embedding or null on failure
+ * @param string $query The user's original query
+ * @param string $context The context from search results
+ * @param array $results List of search result objects with text and metadata
+ * @return string Synthesized answer with source citations
  */
-function getGeminiEmbedding($text) {
+function synthesizeAnswer($query, $context, $results) {
     $geminiApiKey = getenv('GEMINI_API_KEY');
+    
     if (!$geminiApiKey) {
-        error_log("Gemini API key not configured");
+        error_log("ERROR: Gemini API key not configured for answer synthesis");
         return null;
     }
     
-    // Trim text to avoid API limits
-    if (strlen($text) > 25000) {
-        $text = substr($text, 0, 25000);
+    // Handle case where no results are found
+    if (empty($results)) {
+        error_log("WARNING: No knowledge base results found for query: $query");
+        return "I don't have specific information about that in my nutrition knowledge base. Could you please ask a different nutrition-related question, or rephrase your current question?";
     }
     
-    $url = "https://generativelanguage.googleapis.com/v1/models/embedding-001:embedContent?key={$geminiApiKey}";
+    // Create source references for citation
+    $sources = [];
+    foreach ($results as $index => $result) {
+        $sourceNum = $index + 1;
+        $title = !empty($result['title']) ? $result['title'] : "Source $sourceNum";
+        $sources[] = $title;
+    }
+    
+    // Combine source references
+    $sourceReferences = implode(", ", $sources);
+    
+    // Create system prompt with instructions for answer formatting
+    $systemPrompt = <<<EOD
+You are NutriGuide, a specialized nutritional assistant. Your task is to answer questions about nutrition accurately, using only information from the provided context. Format your response in clear, concise markdown.
+
+IMPORTANT INSTRUCTIONS:
+1. Use ONLY information from the provided context to answer the question.
+2. If you cannot answer the question from the context, say "I don't have enough information about that topic."
+3. Your answers should be concise but complete.
+4. DO NOT mention that you're using a specific context or that your knowledge comes from specific sources in the main answer.
+5. DO NOT use first-person language like "In the provided context" or "Based on the information I have."
+6. Format your response in proper markdown with sections and bullet points where appropriate.
+7. ALWAYS include source citations at the end of your response with markdown formatting.
+8. At the end of your response, ALWAYS include a "Sources:" section with references to all sources you used.
+
+FORMAT YOUR ANSWER AS FOLLOWS:
+1. Main answer with proper markdown formatting
+2. Two line breaks
+3. **Sources:**
+4. List of numbered sources
+
+Remember to be friendly and helpful, but focus on nutrition information that's backed by the sources provided.
+EOD;
+
+    // Construct prompt for Gemini API
+    $messages = [
+        [
+            "role" => "system",
+            "content" => $systemPrompt
+        ],
+        [
+            "role" => "user",
+            "content" => "Here is nutrition information from sources:\n\n$context\n\nQuestion: $query\n\nRemember to cite your sources."
+        ]
+    ];
+    
+    // Prepare request payload
+    $payload = [
+        "contents" => $messages,
+        "generationConfig" => [
+            "temperature" => 0.2,
+            "topP" => 0.8,
+            "topK" => 40,
+            "maxOutputTokens" => 800,
+        ]
+    ];
+    
+    // Initialize cURL session
+    $ch = curl_init();
+    
+    // Set cURL options
+    curl_setopt($ch, CURLOPT_URL, "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=" . $geminiApiKey);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    
+    // Enable verbose output for debugging
+    curl_setopt($ch, CURLOPT_VERBOSE, true);
+    $verbose = fopen('php://temp', 'w+');
+    curl_setopt($ch, CURLOPT_STDERR, $verbose);
+    
+    // Execute cURL request
+    $response = curl_exec($ch);
+    
+    // Get verbose information
+    rewind($verbose);
+    $verboseLog = stream_get_contents($verbose);
+    error_log("DEBUG: cURL verbose output (synthesize): " . $verboseLog);
+    
+    // Check for cURL errors
+    if (curl_errno($ch)) {
+        error_log("ERROR: Gemini API request failed: " . curl_error($ch));
+        curl_close($ch);
+        return null;
+    }
+    
+    // Get HTTP status code
+    $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    // Check if request was successful
+    if ($statusCode !== 200) {
+        error_log("ERROR: Gemini API returned status code $statusCode: $response");
+        return null;
+    }
+    
+    // Parse response
+    $responseData = json_decode($response, true);
+    
+    // Check if response is valid
+    if (!$responseData || !isset($responseData['candidates'][0]['content']['parts'][0]['text'])) {
+        error_log("ERROR: Invalid response from Gemini API: " . print_r($response, true));
+        return null;
+    }
+    
+    // Extract answer text
+    $answerText = $responseData['candidates'][0]['content']['parts'][0]['text'];
+    
+    // Ensure we have a sources section
+    if (!preg_match('/\*\*Sources:\*\*/i', $answerText)) {
+        // Add sources section if missing
+        $answerText .= "\n\n**Sources:**\n";
+        foreach ($results as $index => $result) {
+            $sourceNum = $index + 1;
+            $title = !empty($result['title']) ? $result['title'] : "Source $sourceNum";
+            $answerText .= "$sourceNum. $title\n";
+        }
+    }
+    
+    error_log("INFO: Successfully synthesized answer with sources");
+    return $answerText;
+}
+
+/**
+ * Get embedding vector for text using Gemini API
+ * 
+ * @param string $text The text to get the embedding for
+ * @return array|null The embedding vector or null on error
+ */
+function getGeminiEmbedding($text) {
+    $apiKey = getenv('GEMINI_API_KEY');
+    
+    if (!$apiKey) {
+        error_log("ERROR: Gemini API key not configured.");
+        return null;
+    }
+    
+    // Ensure text length doesn't exceed API limits (20,000 chars)
+    if (strlen($text) > 20000) {
+        $text = substr($text, 0, 20000);
+        error_log("WARNING: Text too long for embedding, trimmed to 20,000 chars");
+    }
+    
+    error_log("INFO: Getting Gemini embedding for text: " . substr($text, 0, 50) . "...");
+    
+    $url = "https://generativelanguage.googleapis.com/v1/models/embedding-001:embedContent?key=" . $apiKey;
     
     $data = [
-        'model' => 'models/embedding-001',
-        'content' => [
-            'parts' => [
-                ['text' => $text]
+        "model" => "models/embedding-001",
+        "content" => [
+            "parts" => [
+                ["text" => $text]
             ]
         ]
     ];
     
-    $curl = curl_init();
-    curl_setopt_array($curl, [
+    $ch = curl_init();
+    curl_setopt_array($ch, [
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST => true,
         CURLOPT_POSTFIELDS => json_encode($data),
-        CURLOPT_HTTPHEADER => ['Content-Type: application/json']
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json'
+        ],
+        CURLOPT_TIMEOUT => 30
     ]);
     
-    $response = curl_exec($curl);
-    $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
-    curl_close($curl);
+    // Enable verbose logging for debugging
+    curl_setopt($ch, CURLOPT_VERBOSE, true);
+    $verbose = fopen('php://temp', 'w+');
+    curl_setopt($ch, CURLOPT_STDERR, $verbose);
     
-    if ($httpCode != 200) {
-        error_log("Gemini embedding request failed with HTTP {$httpCode}: {$response}");
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
+    // Get verbose log
+    rewind($verbose);
+    $verboseLog = stream_get_contents($verbose);
+    error_log("VERBOSE: " . $verboseLog);
+    
+    if ($httpCode !== 200) {
+        error_log("ERROR: Gemini API returned status " . $httpCode . ": " . $response);
+        
+        if (curl_errno($ch)) {
+            error_log("ERROR: cURL error: " . curl_error($ch));
+        }
+        
+        curl_close($ch);
         return null;
     }
     
-    $result = json_decode($response, true);
+    curl_close($ch);
     
-    if ($result && isset($result['embedding']) && isset($result['embedding']['values'])) {
-        return $result['embedding']['values'];
+    $jsonResponse = json_decode($response, true);
+    
+    if (!$jsonResponse || !isset($jsonResponse['embedding']) || !isset($jsonResponse['embedding']['values'])) {
+        error_log("ERROR: Unexpected response format from Gemini: " . print_r($response, true));
+        return null;
     }
     
-    error_log("Unexpected Gemini embedding response: " . print_r($result, true));
-    return null;
+    $embedding = $jsonResponse['embedding']['values'];
+    error_log("INFO: Successfully got embedding with " . count($embedding) . " dimensions");
+    
+    return $embedding;
+}
+
+// Helper function to update conversation history (now directly in conversations table)
+function updateConversationSummary($conn, $conversation_id, $newSummary = null) {
+    if ($newSummary === null) {
+        return null; // If no summary provided, nothing to update
+    }
+    
+    // Update the conversation summary
+    $update_stmt = $conn->prepare("
+        UPDATE conversations 
+        SET conversation_summary = ? 
+        WHERE id = ?
+    ");
+    $update_stmt->bind_param("si", $newSummary, $conversation_id);
+    $update_stmt->execute();
+    $update_stmt->close();
+    
+    return $newSummary;
 }
 ?>
