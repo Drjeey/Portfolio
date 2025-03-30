@@ -1,0 +1,50 @@
+# Sample Document for Embedding Tool
+
+## Introduction
+
+This is a sample document to demonstrate how the Gemini Embedding Tool processes text files. The tool will split this document into chunks, embed them using the Gemini API, and store the embeddings in Qdrant for efficient semantic search.
+
+## Document Structure
+
+Documents are chunked at paragraph boundaries to preserve context. The tool automatically handles chunking with configurable overlap between chunks to ensure that related information is properly connected.
+
+Each chunk receives its own embedding vector, which captures the semantic meaning of that chunk. These vectors are used for similarity searches in Qdrant.
+
+## Example Information
+
+The Gemini Embedding Tool supports many different use cases:
+
+### Knowledge Bases
+
+You can create knowledge bases by embedding documentation, papers, research articles, and other knowledge sources. These can then be retrieved based on semantic relevance to user queries.
+
+### FAQ Systems
+
+Embed frequently asked questions and their answers to create a system that can find the most relevant responses to user questions, even when the wording differs from the original question.
+
+### Document Retrieval
+
+Index large collections of documents for semantic search capabilities. Users can search using natural language rather than just keywords.
+
+## Technical Details
+
+The tool uses Google's Gemini embedding model to convert text into high-dimensional vectors (768 dimensions by default). These vectors represent the semantic meaning of the text.
+
+Qdrant is used as the vector database. It efficiently stores these vectors and provides fast similarity search capabilities. When searching, Qdrant finds vectors that are closest to the query vector using cosine similarity.
+
+The search process can match concepts and meanings rather than just keywords, making it much more powerful than traditional search methods.
+
+## Implementation Considerations
+
+When implementing this system:
+
+1. Choose a good chunk size - too small and you lose context, too large and you dilute specific information
+2. Set an appropriate chunk overlap to maintain continuity between chunks
+3. Consider the API rate limits when embedding large document collections
+4. Use batch processing for efficient uploads to Qdrant
+
+## Conclusion
+
+This sample document demonstrates how text is processed and embedded. By placing this and other text files in the docs folder, you can quickly build a semantic search system for any type of content.
+
+You can replace this sample with your own documents to create a customized knowledge base tailored to your specific domain. 
