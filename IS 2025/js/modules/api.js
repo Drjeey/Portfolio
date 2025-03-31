@@ -71,34 +71,65 @@ export async function fetchConversation(conversationId) {
 
 // Fetch conversation history for AI context
 export async function fetchConversationHistory(conversationId) {
+    console.log('%c[API] Fetching conversation history for context:', 'color: #9C27B0', conversationId);
+    
     try {
         const historyResponse = await fetch(`backend.php?get_history=true&conversation_id=${conversationId}`);
         if (historyResponse.ok) {
-            return await historyResponse.json();
+            const data = await historyResponse.json();
+            
+            // Log if summary is found
+            if (data.summary) {
+                console.log('%c[API] Conversation summary found in history response', 'color: #4CAF50');
+                console.log('%c[API] Summary preview:', 'color: #4CAF50', data.summary.substring(0, 100) + '...');
+            } else {
+                console.log('%c[API] No conversation summary found in history response', 'color: #FFC107');
+            }
+            
+            return data;
         } else {
+            console.error('%c[API ERROR] Failed to retrieve conversation history:', 'color: #f44336', historyResponse.status);
             throw new Error("Error retrieving conversation history");
         }
     } catch (error) {
-        console.error("Error fetching conversation history:", error);
+        console.error('%c[API ERROR] Exception fetching conversation history:', 'color: #f44336', error);
         throw error;
     }
 }
 
 // Get message count for a conversation
 export async function getMessageCount(conversationId) {
-    if (!conversationId) return 0;
-    
     try {
-        const response = await fetch(`backend.php?get_message_count=true&conversation_id=${conversationId}`);
-        if (response.ok) {
-            const data = await response.json();
-            return data.count || 0;
+        if (!conversationId || conversationId === 'new' || conversationId === 'null' || conversationId === 'undefined') {
+            console.log('%c[API] Invalid conversation ID for message count:', 'color: #FFC107', conversationId);
+            return 0;
+        }
+        
+        console.log('%c[API] Getting message count for conversation:', 'color: #9C27B0', conversationId);
+        
+        const response = await fetch(`backend.php?action=get_message_count&conversation_id=${conversationId}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            console.error('%c[API ERROR] Error getting message count:', 'color: #f44336', response.status);
+            return 0;
+        }
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            console.log('%c[API] Message count for conversation:', 'color: #4CAF50', data.count);
+            return data.count;
         } else {
-            console.error("Error getting message count");
+            console.error('%c[API ERROR] Backend error getting message count:', 'color: #f44336', data.error);
             return 0;
         }
     } catch (error) {
-        console.error("Error getting message count:", error);
+        console.error('%c[API ERROR] Exception getting message count:', 'color: #f44336', error);
         return 0;
     }
 }
@@ -201,6 +232,14 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
         
         console.log(`Saving message to conversation ${convId}`);
         
+        // Check if we have a pending conversation summary
+        const conversationSummary = window.pendingConversationSummary || null;
+        if (conversationSummary) {
+            console.log('%c[API] Including conversation summary with message save', 'color: #4CAF50');
+            // Clear the pending summary
+            window.pendingConversationSummary = null;
+        }
+        
         const response = await fetch('backend.php', {
             method: 'POST',
             headers: {
@@ -210,7 +249,8 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
                 action: 'saveMessage',
                 user_message: userMessage,
                 bot_message: botMessage,
-                conversation_id: convId
+                conversation_id: convId,
+                conversation_summary: conversationSummary
             })
         });
         
@@ -228,15 +268,29 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
         
         console.log("Message saved successfully to conversation:", data.conversation_id);
         
-        // If this is a new conversation or title was generated, log it
+        // If this is a new conversation or title was generated, log it and trigger title generation
         if ((convId === 'new' || data.title_generated) && data.title) {
             console.log(`Conversation titled: "${data.title}"`);
+            
+            // IMPORTANT: If it's a new conversation or first message, ensure we generate a proper title
+            const titleData = {
+                isNew: convId === 'new',
+                requiresTitle: data.title_generated,
+                conversationId: data.conversation_id,
+                title: data.title,
+                userMessage: userMessage
+            };
+            
+            // Store this data for later title generation
+            window.pendingTitleGeneration = titleData;
             
             // Trigger a custom event that other modules can listen for
             const titleEvent = new CustomEvent('conversationTitleUpdated', {
                 detail: {
                     conversationId: data.conversation_id,
-                    title: data.title
+                    title: data.title,
+                    requiresGeneration: true,
+                    userMessage: userMessage
                 }
             });
             document.dispatchEvent(titleEvent);
@@ -245,6 +299,36 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
         return data;
     } catch (error) {
         console.error('Error saving message:', error);
+        return { success: false, error: error.message };
+    }
+}
+
+// Save chat messages with conversation summary
+export async function saveChatMessages(userMessage, botMessage, conversationId, conversationSummary = null) {
+    try {
+        // Log that we're using the more comprehensive saving function
+        console.log('%c[API] Using saveChatMessages with conversation summary', 'color: #9C27B0');
+        
+        // If no conversation ID, treat as new conversation
+        const convId = conversationId || 'new';
+        
+        // Save the summary in a global variable if it's provided
+        if (conversationSummary) {
+            window.pendingConversationSummary = conversationSummary;
+            console.log('%c[API] Set pending conversation summary for save', 'color: #4CAF50');
+        }
+        
+        // Use the existing saveMessage function to handle the actual save
+        const result = await saveMessage(userMessage, botMessage, convId);
+        
+        // Add flag to indicate it's the first message if it's a new conversation
+        if (result.success && convId === 'new') {
+            result.isFirstMessage = true;
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('%c[API ERROR] Exception in saveChatMessages:', 'color: #f44336', error);
         return { success: false, error: error.message };
     }
 }
@@ -302,12 +386,22 @@ export async function sendChatMessage(conversationId, message) {
         // Call the AI service using the proxy
         console.log('%c[API] Calling AI service through proxy', 'color: #9C27B0');
         
-        const systemInstruction = "You are NutriGuide, a specialized nutrition assistant powered by Nourish 1.0.";
+        // Enhanced system instruction with context awareness guidance
+        const systemInstruction = "You are NutriGuide, a specialized nutrition assistant powered by Nourish 1.0. While nutrition is your primary focus, you can engage in normal conversation as well. You have access to conversation context in the form of summaries, which means you can remember previous exchanges in this conversation. If asked about memories or what was discussed before, you should acknowledge that you can recall previous messages in the current conversation based on the provided context/summary. If this is the first message in a conversation (no summary provided), you can explain that this is the beginning of your conversation together.";
+        
         const aiResponse = await callGeminiProxy(message, systemInstruction);
         
         // Now we have the AI response, handle saving it
         if (!conversationId || conversationId === 'new' || conversationId === 'null' || conversationId === 'undefined') {
             console.log('%c[API] Creating new conversation with initial message', 'color: #9C27B0');
+            
+            // Check if we have a pending conversation summary
+            const conversationSummary = window.pendingConversationSummary || null;
+            if (conversationSummary) {
+                console.log('%c[API] Including conversation summary with new conversation', 'color: #4CAF50');
+                // Clear the pending summary after we use it
+                window.pendingConversationSummary = null;
+            }
             
             // For new conversations, use the 'saveMessage' action with 'new' as the conversation_id
             // This tells the backend to create a new conversation and add this message to it
@@ -320,7 +414,8 @@ export async function sendChatMessage(conversationId, message) {
                     action: 'saveMessage',
                     user_message: message,
                     bot_message: aiResponse,
-                    conversation_id: 'new'
+                    conversation_id: 'new',
+                    conversation_summary: conversationSummary
                 })
             });
             
@@ -369,12 +464,93 @@ async function callGeminiProxy(message, systemInstruction) {
     const knowledgeResults = window.lastKnowledgeResults;
     let enhancedPrompt = '';
     
+    // Get conversation summary if available
+    let conversationSummary = null;
+    
+    // Import conversation module functions to get the summary
+    const conversationModule = await import('./conversation.js');
+    
+    // Check for existing conversation ID
+    const conversationId = conversationModule.getCurrentConversationId();
+    let isNewConversation = !conversationId || conversationId === 'new' || conversationId === 'null' || conversationId === 'undefined';
+    
+    // Get the message count to determine if this is actually a first message
+    let messageCount = 0;
+    if (!isNewConversation) {
+        try {
+            messageCount = await conversationModule.getConversationMessageCount(conversationId);
+            console.log(`%c[API] Conversation message count: ${messageCount}`, 'color: #9C27B0');
+            // Override isNewConversation if this is the first or second message
+            if (messageCount <= 1) {
+                isNewConversation = true;
+                console.log(`%c[API] Treating as new conversation based on message count`, 'color: #9C27B0');
+            }
+        } catch (error) {
+            console.error('%c[API ERROR] Error getting conversation message count:', 'color: #f44336', error);
+        }
+    }
+    
+    // IMPORTANT: Log conversation state for debugging title/context issues
+    console.log('%c[API] Conversation state:', 'color: #4CAF50', { 
+        id: conversationId,
+        isNew: isNewConversation,
+        messageCount,
+        titleUpdated: conversationModule.getTitleHasBeenUpdated ? 
+                     conversationModule.getTitleHasBeenUpdated() : 'unknown'
+    });
+    
+    // If not a new conversation, try to get the conversation summary
+    if (!isNewConversation) {
+        try {
+            console.log('%c[API] Getting conversation summary for context', 'color: #9C27B0');
+            // First check if it's already in memory
+            conversationSummary = conversationModule.getCurrentConversationSummary();
+            
+            // If not in memory, try to fetch it
+            if (!conversationSummary) {
+                console.log('%c[API] Fetching conversation summary from server', 'color: #9C27B0');
+                conversationSummary = await conversationModule.fetchConversationSummary(conversationId);
+            }
+            
+            if (conversationSummary) {
+                console.log('%c[API] Found conversation summary for context', 'color: #4CAF50');
+            }
+        } catch (error) {
+            console.error('%c[API ERROR] Error getting conversation summary:', 'color: #f44336', error);
+            // Continue without summary if there's an error
+        }
+    }
+    
+    // Enhanced context instructions that explicitly explain the conversational state
+    let contextInstruction;
+    
+    if (isNewConversation) {
+        contextInstruction = `This is a NEW CONVERSATION. This is the first message from the user, so you DO NOT have any conversation history or context to work with. If the user asks about previous messages or what you remember, clearly explain that this is the beginning of your conversation.`;
+    } else if (conversationSummary) {
+        contextInstruction = `This is an ONGOING CONVERSATION. You have access to the conversation history through the summary provided below. You CAN reference previous messages and acknowledge things you've discussed before.`;
+    } else {
+        contextInstruction = `This appears to be an ongoing conversation, but no specific context is available. Respond appropriately without referencing previous messages unless you're certain about the context.`;
+    }
+    
+    // Enhanced citation instructions for consistent formatting
+    const citationInstruction = `
+DO NOT use inline citations in your response. 
+Instead, provide a comprehensive answer using the information from the sources.
+At the end of your response, list all sources you referenced under a "Sources:" section.
+Make your response thorough and informative while keeping the writing natural and readable.
+`;
+    
     // Build the prompt based on knowledge base results
     if (knowledgeResults && knowledgeResults.results && knowledgeResults.results.length > 0) {
         console.log('%c[API] Using knowledge base results to enhance prompt', 'color: #9C27B0');
         
         // Start with system instruction
-        enhancedPrompt = systemInstruction + "\n\n";
+        enhancedPrompt = systemInstruction + "\n\n" + contextInstruction + "\n\n" + citationInstruction + "\n\n";
+        
+        // Add conversation summary if available and not a new conversation
+        if (!isNewConversation && conversationSummary) {
+            enhancedPrompt += "Conversation summary:\n" + conversationSummary + "\n\n";
+        }
         
         // Add knowledge context
         enhancedPrompt += "Relevant information from the nutrition database:\n\n";
@@ -388,35 +564,83 @@ async function callGeminiProxy(message, systemInstruction) {
         
         // Add the user query
         enhancedPrompt += "User query: " + message + "\n\n";
-        enhancedPrompt += "Based on the nutrition information above, please provide a helpful response. Include references to the sources when appropriate.";
+        enhancedPrompt += "Based on the nutrition information above, please provide a thorough, comprehensive response that addresses the query in detail. DO NOT include a 'Sources:' section at the end - this will be added automatically by the system.";
     } else {
-        // Just use the basic prompt
-        enhancedPrompt = `${systemInstruction}\n\nUser query: ${message}`;
+        // Start with system instruction
+        enhancedPrompt = systemInstruction + "\n\n" + contextInstruction + "\n\n";
+        
+        // Add conversation summary if available and not a new conversation
+        if (!isNewConversation && conversationSummary) {
+            enhancedPrompt += "Conversation summary:\n" + conversationSummary + "\n\n";
+        }
+        
+        // Add the user query
+        enhancedPrompt += "User query: " + message;
     }
     
-    // Clear the knowledge results for the next request
-    window.lastKnowledgeResults = null;
+    // Request configuration
+    const requestConfig = {
+        model: window.ENV.GEMINI_MODEL_NAME || 'Nourish-1.0',
+        contents: enhancedPrompt,
+        generationConfig: {
+            temperature: 0.3,
+            topP: 0.7,
+            topK: 16,
+            maxOutputTokens: 2048
+        }
+    };
     
-    const response = await fetch('gemini-proxy.php', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            model: window.ENV.GEMINI_MODEL_NAME || 'Nourish-1.0',
-            contents: enhancedPrompt,
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 2048
+    // If we have a conversation summary, let's add a special instruction to update it
+    if (conversationSummary) {
+        requestConfig.contents += "\n\nAfter answering the user's query, please generate an updated conversation summary that captures the key points of the entire conversation so far, including this new exchange. The summary should include enough detail to help you remember what was discussed, including specific questions asked and information provided. Format it as: [SUMMARY] your comprehensive summary text [/SUMMARY]";
+    } else {
+        requestConfig.contents += "\n\nAfter answering the user's query, please generate a brief conversation summary that captures the key points of this exchange. The summary should include the user's question and the main points of your response to help you recall this conversation later. Format it as: [SUMMARY] your summary text [/SUMMARY]";
+    }
+    
+    console.log('%c[API] Gemini API request payload:', 'color: #9C27B0', requestConfig);
+    
+    try {
+        const response = await fetch('gemini-proxy.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestConfig)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Server error: ${response.status}`);
+        }
+        
+        const responseData = await response.json();
+        let aiResponse = responseData.text || '';
+        
+        // Extract and store the summary if it exists
+        if (aiResponse.includes('[SUMMARY]') && aiResponse.includes('[/SUMMARY]')) {
+            const summaryRegex = /\[SUMMARY\](.*?)\[\/SUMMARY\]/s;
+            const match = aiResponse.match(summaryRegex);
+            
+            if (match && match[1]) {
+                // Extract the new summary
+                const newSummary = match[1].trim();
+                console.log('%c[API] Extracted new conversation summary', 'color: #4CAF50');
+                
+                // Remove the summary from the visible response
+                aiResponse = aiResponse.replace(summaryRegex, '').trim();
+                
+                // Store the summary in conversation state
+                if (conversationModule && typeof conversationModule.setCurrentConversationSummary === 'function') {
+                    conversationModule.setCurrentConversationSummary(newSummary);
+                }
+                
+                // Add the summary to saveMessage when it gets called later
+                window.pendingConversationSummary = newSummary;
             }
-        })
-    });
-    
-    if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Proxy error: ${errorData.error || response.status}`);
+        }
+        
+        return aiResponse;
+    } catch (error) {
+        console.error('%c[API ERROR] Error getting AI response:', 'color: #f44336', error);
+        throw error;
     }
-    
-    const data = await response.json();
-    return data.text || "I apologize, but I couldn't generate a response at this time.";
 } 

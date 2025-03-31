@@ -386,45 +386,34 @@ export async function sendMessageToModel(message, model, baseSystemInstruction, 
                 displayResponse = responseForUser;
                 if (knowledgeResults && knowledgeResults.results && knowledgeResults.results.length > 0) {
                     try {
-                        console.log("Adding sources to response, found results:", knowledgeResults.results.length);
-                        console.log("Results filenames:", knowledgeResults.results.map(r => r.filename));
-                        
-                        try {
-                            // Use the async formatSources method to get HTML with links
-                            const sourcesHtml = await knowledgeBase.formatSources(knowledgeResults);
-                            console.log("Sources HTML:", sourcesHtml);
+                        console.log("Adding sources to response");
+                        // IMPORTANT: Check if already has sources section and remove it (avoiding duplicates)
+                        const removeDuplicateSources = (text) => {
+                            // Check for various formats of source sections
+                            const patterns = [
+                                /\n+\*?\*?Sources:?\*?\*?[\s\S]*$/i,  // Matches "Sources:" or "**Sources:**" to the end
+                                /\n+Sources:[\s\S]*$/i  // Matches "Sources:" to the end
+                            ];
                             
-                            if (sourcesHtml) {
-                                // Replace the simple sources with the nicer HTML version with links
-                                // Use a clear visual break between content and sources
-                                displayResponse = responseForUser + `\n\n---\n\n${sourcesHtml}`;
-                                
-                                // Log that sources were added
-                                console.log("Added sources HTML to display response");
-                            } else {
-                                console.warn("No sources HTML was returned");
-                                
-                                // Force inclusion of basic sources if HTML formatting fails
-                                const sourceNames = knowledgeResults.sources || 
-                                                 (knowledgeResults.results ? knowledgeResults.results.map(r => r.title) : []);
-                                displayResponse += "\n\n**Sources:**\n" + sourceNames.join(', ');
-                                console.log("Added basic sources as fallback");
+                            let cleanedText = text;
+                            for (const pattern of patterns) {
+                                if (pattern.test(cleanedText)) {
+                                    console.log("Removing duplicate sources section");
+                                    cleanedText = cleanedText.replace(pattern, '');
+                                }
                             }
-                        } catch (linkError) {
-                            console.error("Could not add linked sources:", linkError);
-                            // Fallback to simple text citations
-                            const sourceNames = knowledgeResults.sources || 
-                                              (knowledgeResults.results ? knowledgeResults.results.map(r => r.title) : []);
-                            displayResponse += "\n\n**Sources:**\n" + sourceNames.join(', ');
-                            console.log("Added basic sources after link error");
+                            return cleanedText;
+                        };
+
+                        // Clean the response first to remove any existing sources section
+                        displayResponse = removeDuplicateSources(responseForUser);
+                        // Use the async formatSources method to get HTML with links
+                        const sourcesHtml = await knowledgeBase.formatSources(knowledgeResults);
+                        if (sourcesHtml) {
+                            displayResponse = displayResponse + '\n\n---\n\n' + sourcesHtml;
                         }
-                    } catch (citationError) {
-                        console.error("Error formatting sources:", citationError);
-                        // Another fallback if the first catch doesn't handle it
-                        const sourceNames = knowledgeResults.sources || 
-                                          (knowledgeResults.results ? knowledgeResults.results.map(r => r.title) : []);
-                        displayResponse += "\n\n**Sources:**\n" + sourceNames.join(', ');
-                        console.log("Added basic sources after citation error");
+                    } catch (error) {
+                        console.error("Error formatting sources:", error);
                     }
                 }
             } catch (aiError) {
@@ -642,10 +631,10 @@ export async function processUserMessage(userMessage, botResponse, conversationI
     try {
         // Add user message to UI immediately
         ui.addMessageToUI(userMessage, "user", username);
-
+        
         // Format the bot response
         let formattedBotResponse = botResponse;
-
+        
         // Check for knowledge base response with synthesized answer
         // and format it appropriately with sources
         const knowledgeResponse = window.lastKnowledgeResponse;
@@ -709,74 +698,68 @@ export async function processUserMessage(userMessage, botResponse, conversationI
         }
 
         // Add bot message to UI
-        ui.addMessageToUI(formattedBotResponse, "bot", "NutriGuide");
+        ui.addMessageToUI(formattedBotResponse, "bot");
         
-        // Get the correct conversation ID - either from the parameter or fallback to window value if not provided
-        const currentConvId = conversationId || window.currentConversationId || conversation.getCurrentConversationId();
-        
-        console.log("Saving message with conversation ID:", currentConvId);
-        
-        // Save message to database if we have a conversation ID
-        if (currentConvId && currentConvId !== 'undefined' && currentConvId !== 'null') {
-            try {
-                await api.saveMessage(userMessage, formattedBotResponse, currentConvId);
-            } catch (saveError) {
-                console.error("Error saving messages:", saveError);
+        // Always call generateTitle for the first message in a conversation
+        // This will help ensure titles are always generated properly
+        try {
+            if (conversationId) {
+                const messageCount = await conversation.getConversationMessageCount(conversationId);
+                console.log("Message count for conversation", conversationId, ":", messageCount);
+                
+                // Generate title if this is one of the first messages
+                if (messageCount <= 2) {
+                    console.log("Generating title for conversation from processUserMessage");
+                    await generateTitle(userMessage, botResponse, conversationId);
+                }
             }
-        } else {
-            console.warn("No conversation ID available, messages not saved to database", {
-                providedId: conversationId,
-                windowId: window.currentConversationId,
-                stateId: conversation.getCurrentConversationId()
-            });
+        } catch (titleError) {
+            console.error("Error handling title generation:", titleError);
         }
+        
+        return true;
     } catch (error) {
         console.error("Error processing message:", error);
-        ui.displayError("An error occurred while processing your message. Please try again.");
+        ui.showErrorMessage(error.message);
+        return false;
     }
 }
 
 // Function to save messages to conversation history
 export async function saveMessageToHistory(userMessage, botResponse) {
     try {
-        console.log("Saving message to history");
+        // Get the current conversation ID
+        const conversationId = conversation.getCurrentConversationId() || 'new';
+        console.log("Saving messages to conversation:", conversationId);
         
-        // Skip saving if no conversation ID (should never happen, but just in case)
-        if (!window.currentConversationId) {
-            console.error("Cannot save message: No current conversation ID");
+        // Save the message pair
+        const response = await api.saveChatMessages(userMessage, botResponse, conversationId);
+        
+        if (!response.success) {
+            console.error("Error saving messages:", response.error);
             return false;
         }
         
-        const response = await fetch("backend.php", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                action: "saveMessage",
-                user_message: userMessage,
-                bot_message: botResponse,
-                conversation_id: window.currentConversationId
-            })
-        });
-
-        if (!response.ok) {
-            console.error("Error saving message:", response.status);
-            return false;
-        }
-
-        const data = await response.json();
-        console.log("Message saved response:", data);
+        console.log("Messages saved successfully. Conversation ID:", response.conversation_id);
         
-        // If this was a new conversation, update the ID
-        if (data.conversation_id && window.currentConversationId === 'new') {
-            window.currentConversationId = data.conversation_id;
-            console.log("Updated conversation ID to:", data.conversation_id);
+        // If this is a new conversation or the first message, make sure we set it as current
+        if (conversationId === 'new' || response.isFirstMessage) {
+            console.log("Setting current conversation:", response.conversation_id, response.title);
+            conversation.setCurrentConversation(
+                response.conversation_id,
+                response.title || "New Nutrition Chat"
+            );
+            
+            // Make sure the conversation is visible in the list
+            await conversation.loadConversationList();
+            
+            // Generate a title if it's a new conversation
+            await generateTitle(userMessage, botResponse, response.conversation_id);
         }
         
         return true;
     } catch (error) {
-        console.error("Error saving message:", error);
+        console.error("Error saving message to history:", error);
         return false;
     }
 }
@@ -789,40 +772,128 @@ export async function generateTitle(userMessage, botResponse, conversationId) {
             return;
         }
         
-        console.log("Generating title for conversation");
+        console.log("Generating title for conversation:", conversationId);
         
-        // If the conversation already has a title (not 'new'), don't generate
-        if (conversationId !== 'new' && 
-            document.querySelector(`.conversation-item[data-id="${conversationId}"] .conversation-title`)) {
-            console.log("Conversation already has a title");
+        // FIXED: Don't check if conversation has a title since that's preventing 
+        // title generation for new conversations. Instead, always generate for new 
+        // conversations or when message count is low.
+        const messageCount = await conversation.getConversationMessageCount(conversationId);
+        console.log("Current message count:", messageCount);
+        
+        // Only generate title for new conversations or ones with very few messages
+        if (messageCount > 2) {
+            console.log("Conversation already has enough messages, skipping title generation");
             return;
         }
         
-        const response = await fetch("backend.php", {
-            method: "POST",
+        // Ensure a minimum length user message to get a good title
+        if (userMessage.trim().length < 5) {
+            console.log("User message too short for good title generation");
+            return;
+        }
+        
+        // Log that we're actually proceeding with title generation
+        console.log("Proceeding with title generation for conversation:", conversationId);
+        
+        // CHANGED: Instead of using backend.php, call Gemini directly like in conversation.js
+        // This avoids issues with the backend implementation
+        const titlePrompt = `As a nutrition assistant, create a short, descriptive title (5 words or less) that captures the essence of this conversation. Don't repeat the user's question verbatim. Instead, extract the key nutrition topic or concept and create a concise, professional title.
+
+User message: "${userMessage}"
+
+Example transformations:
+- "What are the health benefits of eating apples?" → "Apple Health Benefits"
+- "Is a keto diet good for weight loss?" → "Keto Diet Effectiveness"
+- "What foods are high in protein that are vegan?" → "Vegan Protein Sources"
+
+Title:`;
+
+        const response = await fetch('gemini-proxy.php', {
+            method: 'POST',
             headers: {
-                "Content-Type": "application/json"
+                'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                action: "generateTitle",
-                user_message: userMessage,
-                bot_message: botResponse,
-                conversation_id: conversationId
+                model: window.ENV.GEMINI_MODEL_NAME || 'gemini-1.5-flash',
+                contents: titlePrompt,
+                generationConfig: {
+                    temperature: 0.5,
+                    maxOutputTokens: 100
+                }
             })
         });
 
         if (!response.ok) {
-            console.error("Error generating title:", response.status);
-            return;
+            const errorData = await response.json();
+            throw new Error(`Proxy error for title generation: ${errorData.error || response.status}`);
         }
 
-        const data = await response.json();
-        console.log("Title generation response:", data);
+        // Get the response data
+        const responseData = await response.json();
+        let titleSuggestion = responseData.text || '';
         
-        if (data.title) {
-            ui.showTitleNotification(data.title);
+        // Clean up the title using the function from conversation.js
+        titleSuggestion = cleanupTitleText(titleSuggestion);
+        
+        console.log("Generated title suggestion:", titleSuggestion);
+
+        if (titleSuggestion) {
+            // Now update the title in the database
+            const updateResponse = await api.updateConversationTitle(titleSuggestion, conversationId);
+            
+            if (updateResponse.success) {
+                console.log("Title updated successfully:", titleSuggestion);
+                ui.showTitleNotification(titleSuggestion);
+                
+                // Force a refresh of the conversation list to show the new title
+                await conversation.loadConversationList();
+                
+                // Update the document title as well
+                ui.updateDocumentTitle(titleSuggestion);
+                
+                // Set the title updated flag
+                conversation.setTitleHasBeenUpdated(true);
+            } else {
+                console.error("Failed to update title in database:", updateResponse.error);
+            }
         }
     } catch (error) {
         console.error("Error generating title:", error);
     }
+}
+
+// Helper function to clean up title text (copied from conversation.js)
+function cleanupTitleText(title) {
+    if (!title) return "Nutrition Query";
+    
+    // Remove markdown formatting (bold, italic, etc.)
+    let cleanTitle = title
+        .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold **text**
+        .replace(/\*(.*?)\*/g, '$1')     // Remove italic *text*
+        .replace(/\_\_(.*?)\_\_/g, '$1') // Remove bold __text__
+        .replace(/\_(.*?)\_/g, '$1')     // Remove italic _text_
+        .replace(/\`(.*?)\`/g, '$1')     // Remove code `text`
+        .replace(/\[(.*?)\]\(.*?\)/g, '$1') // Remove links [text](url)
+        .replace(/\#\s+/g, '')           // Remove heading markers # 
+        .replace(/\n/g, ' ')             // Replace newlines with spaces
+        .replace(/["'"]/g, '')           // Remove quotes
+        .replace(/^\s+|\s+$/g, '')       // Trim whitespace
+        .replace(/\s+/g, ' ');           // Normalize spacing
+    
+    // Remove any remaining specifiers like "Title: " that the model might add
+    cleanTitle = cleanTitle
+        .replace(/^(Title|Topic|Subject|Conversation|Chat|About|Re):\s*/i, '')
+        .replace(/^["""''']|["""''']$/g, ''); // Remove quotes at start/end
+    
+    // Limit length
+    if (cleanTitle.length > 50) {
+        cleanTitle = cleanTitle.substring(0, 47) + '...';
+    }
+    
+    // Capitalize first letter of each word
+    cleanTitle = cleanTitle.split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ');
+    
+    return cleanTitle || "Nutrition Query";
 } 

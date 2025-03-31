@@ -733,3 +733,34 @@
         opacity: 1;
     }
 }
+
+/* Source list styling */
+.sources-container {
+    margin-top: 15px;
+    padding-top: 10px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.sources-container h3 {
+    font-size: 16px;
+    margin: 0 0 8px 0;
+    color: #555;
+}
+
+.sources-container ul {
+    padding-left: 20px;
+    margin: 0;
+}
+
+.sources-container li {
+    margin-bottom: 5px;
+}
+
+.sources-container a {
+    color: var(--primary-blue);
+    text-decoration: none;
+}
+
+.sources-container a:hover {
+    text-decoration: underline;
+}

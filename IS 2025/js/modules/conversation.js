@@ -31,7 +31,16 @@ export async function generateConversationTitle(userMessage, conversationId, mod
         }
         
         // Get title prompt - specifically for nutrition topics
-        const titlePrompt = `Please generate a short, descriptive title (5 words or less) for a nutrition conversation that starts with this message: "${userMessage}". Focus on the nutrition or dietary aspect of the question.`;
+        const titlePrompt = `As a nutrition assistant, create a short, descriptive title (5 words or less) that captures the essence of this conversation. Don't repeat the user's question verbatim. Instead, extract the key nutrition topic or concept and create a concise, professional title.
+
+User message: "${userMessage}"
+
+Example transformations:
+- "What are the health benefits of eating apples?" → "Apple Health Benefits"
+- "Is a keto diet good for weight loss?" → "Keto Diet Effectiveness"
+- "What foods are high in protein that are vegan?" → "Vegan Protein Sources"
+
+Title:`;
         
         // Get AI response for the title using the new API format through our proxy
         const response = await fetch('gemini-proxy.php', {
@@ -476,6 +485,22 @@ export function setCurrentConversationSummary(summary) {
     currentState.conversationSummary = summary;
 }
 
+// Get message count for a conversation
+export async function getConversationMessageCount(conversationId) {
+    if (!conversationId) {
+        console.warn("No conversation ID provided to getConversationMessageCount");
+        return 0;
+    }
+    
+    try {
+        console.log(`Getting message count for conversation: ${conversationId}`);
+        return await api.getMessageCount(conversationId);
+    } catch (error) {
+        console.error("Error getting conversation message count:", error);
+        return 0;
+    }
+}
+
 // Set current conversation ID and title
 export function setCurrentConversation(id, title, summary = null) {
     currentState.conversationId = id;
@@ -507,13 +532,35 @@ export function getTitleHasBeenUpdated() {
     return currentState.titleHasBeenUpdated;
 }
 
+// Set whether the current conversation title has been updated
+export function setTitleHasBeenUpdated(value) {
+    currentState.titleHasBeenUpdated = !!value;
+    console.log("Title has been updated flag set to:", currentState.titleHasBeenUpdated);
+}
+
 // Listen for title update events from API
 document.addEventListener('conversationTitleUpdated', async (event) => {
-    const { conversationId, title } = event.detail;
+    const { conversationId, title, requiresGeneration, userMessage } = event.detail;
     
     // Show notification about the new title
     if (typeof ui !== 'undefined' && typeof ui.showTitleNotification === 'function') {
         ui.showTitleNotification(title);
+    }
+    
+    // If this is a new conversation or first message that needs a proper title
+    if (requiresGeneration && userMessage && conversationId) {
+        console.log("Title requires generation, initiating process...");
+        
+        try {
+            // Get the current model reference from window
+            const model = window.currentModel || window.ENV.GEMINI_MODEL_NAME || 'gemini-1.5-flash';
+            
+            // Generate a proper title
+            await generateConversationTitle(userMessage, conversationId, model);
+            console.log("Generated title for new conversation via event listener");
+        } catch (err) {
+            console.error("Failed to generate title via event:", err);
+        }
     }
     
     // Update conversation list if we're in a conversation
