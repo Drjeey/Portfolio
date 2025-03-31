@@ -392,7 +392,10 @@ export async function sendMessageToModel(message, model, baseSystemInstruction, 
                             // Check for various formats of source sections
                             const patterns = [
                                 /\n+\*?\*?Sources:?\*?\*?[\s\S]*$/i,  // Matches "Sources:" or "**Sources:**" to the end
-                                /\n+Sources:[\s\S]*$/i  // Matches "Sources:" to the end
+                                /\n+Sources:[\s\S]*$/i,  // Matches "Sources:" to the end
+                                /<div class="sources-container">[\s\S]*$/i, // Matches HTML source container
+                                /\n+---+\s*\n+(?:\*?\*?Sources:?\*?\*?|\s*Sources:)[\s\S]*$/i, // Matches "---" followed by Sources section
+                                /\n+---+[\s\S]*Sources:[\s\S]*$/i // Matches any combination of separator and Sources
                             ];
                             
                             let cleanedText = text;
@@ -501,22 +504,70 @@ export async function sendMessageToModel(message, model, baseSystemInstruction, 
         console.log("SYNTHESIZED RESPONSE:", responseForUser);
         console.log("SOURCES:", knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "None");
 
-        // Override displayResponse to always show sources
-        displayResponse = responseForUser + 
-            "\n\n---\n\n**Sources:** " + 
-            (knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "No sources found");
-        
-        // If we have a synthesized answer, log it prominently
+        // FIXED: Don't add sources unconditionally - only add them if they don't already exist
+        let hasSourcesSection = responseForUser.includes("Sources:") || 
+                               responseForUser.includes("**Sources:**") ||
+                               responseForUser.includes("<div class=\"sources-container\">");
+                               
+        if (!hasSourcesSection && knowledgeResults && knowledgeResults.results && knowledgeResults.results.length > 0) {
+            console.log("No sources section found, adding one");
+            // Format sources properly
+            try {
+                const sourcesHtml = await knowledgeBase.formatSources(knowledgeResults);
+                if (sourcesHtml) {
+                    displayResponse = responseForUser + '\n\n---\n\n' + sourcesHtml;
+                    console.log("Added properly formatted sources");
+                } else {
+                    // Fallback to simple format if HTML formatting fails
+                    displayResponse = responseForUser + 
+                        "\n\n---\n\n**Sources:** " + 
+                        (knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "No sources found");
+                    console.log("Added basic sources as fallback");
+                }
+            } catch (error) {
+                console.error("Error formatting sources, using fallback:", error);
+                // Simple fallback
+                displayResponse = responseForUser + 
+                    "\n\n---\n\n**Sources:** " + 
+                    (knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "No sources found");
+            }
+        } else {
+            console.log("Response already has sources section, not adding another");
+            displayResponse = responseForUser;
+        }
+
+        // If we have a synthesized answer, use it (but preserve any sources already in it)
         if (knowledgeResults && knowledgeResults.synthesizedAnswer) {
             console.log('%c SYNTHESIZED ANSWER FOUND ', 'background: #4CAF50; color: white; font-size: 20px;');
             console.log('%c' + knowledgeResults.synthesizedAnswer, 'color: #4CAF50; font-size: 16px;');
             console.log('%c WITH SOURCES ', 'background: #4CAF50; color: white; font-size: 16px;');
             console.log('%c' + (knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "No sources"), 'color: #4CAF50; font-size: 14px;');
             
-            // IMPORTANT: Use the synthesized answer directly
-            displayResponse = knowledgeResults.synthesizedAnswer + 
-                "\n\n---\n\n**Sources:** " + 
-                (knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "No sources found");
+            // FIXED: Check if synthesized answer already has sources before adding them
+            hasSourcesSection = knowledgeResults.synthesizedAnswer.includes("Sources:") || 
+                              knowledgeResults.synthesizedAnswer.includes("**Sources:**") ||
+                              knowledgeResults.synthesizedAnswer.includes("<div class=\"sources-container\">");
+                              
+            if (!hasSourcesSection) {
+                try {
+                    const sourcesHtml = await knowledgeBase.formatSources(knowledgeResults);
+                    if (sourcesHtml) {
+                        displayResponse = knowledgeResults.synthesizedAnswer + '\n\n---\n\n' + sourcesHtml;
+                    } else {
+                        displayResponse = knowledgeResults.synthesizedAnswer + 
+                            "\n\n---\n\n**Sources:** " + 
+                            (knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "No sources found");
+                    }
+                } catch (error) {
+                    console.error("Error formatting sources for synthesized answer:", error);
+                    displayResponse = knowledgeResults.synthesizedAnswer + 
+                        "\n\n---\n\n**Sources:** " + 
+                        (knowledgeResults.results ? knowledgeResults.results.map(r => r.title).join(", ") : "No sources found");
+                }
+            } else {
+                console.log("Synthesized answer already has sources, using as is");
+                displayResponse = knowledgeResults.synthesizedAnswer;
+            }
         }
         
         // Save chat to database with summary (for both paths)
@@ -648,6 +699,14 @@ export async function processUserMessage(userMessage, botResponse, conversationI
         if (knowledgeResponse) {
             console.log("Processing knowledge response for UI display:", knowledgeResponse);
             
+            // Helper function to check if response already has sources
+            const hasSourcesSection = (text) => {
+                return text.includes("Sources:") || 
+                      text.includes("**Sources:**") || 
+                      text.includes("<div class=\"sources-container\">") ||
+                      /---+\s*\n+.*?sources/i.test(text);
+            };
+            
             // Use the synthesized answer if available
             if (knowledgeResponse.answer && knowledgeResponse.answer.length > 0) {
                 console.log("Using synthesized answer from knowledge response");
@@ -655,11 +714,14 @@ export async function processUserMessage(userMessage, botResponse, conversationI
                 
                 // Add sources section if not already present
                 if (knowledgeResponse.results && knowledgeResponse.results.length > 0) {
-                    if (!formattedBotResponse.includes("Sources:") && !formattedBotResponse.includes("**Sources:**")) {
+                    if (!hasSourcesSection(formattedBotResponse)) {
+                        console.log("Adding sources to answer");
                         formattedBotResponse += "\n\n**Sources:**\n";
                         knowledgeResponse.results.forEach((result, index) => {
                             formattedBotResponse += `${index + 1}. ${result.title || result.filename || "Unknown source"}\n`;
                         });
+                    } else {
+                        console.log("Answer already has sources, not adding more");
                     }
                 }
             } 
@@ -670,11 +732,14 @@ export async function processUserMessage(userMessage, botResponse, conversationI
                 
                 // Add sources section if not already present
                 if (knowledgeResponse.results && knowledgeResponse.results.length > 0) {
-                    if (!formattedBotResponse.includes("Sources:") && !formattedBotResponse.includes("**Sources:**")) {
+                    if (!hasSourcesSection(formattedBotResponse)) {
+                        console.log("Adding sources to synthesizedAnswer");
                         formattedBotResponse += "\n\n**Sources:**\n";
                         knowledgeResponse.results.forEach((result, index) => {
                             formattedBotResponse += `${index + 1}. ${result.title || result.filename || "Unknown source"}\n`;
                         });
+                    } else {
+                        console.log("SynthesizedAnswer already has sources, not adding more");
                     }
                 }
             }
@@ -727,7 +792,6 @@ export async function processUserMessage(userMessage, botResponse, conversationI
         return true;
     } catch (error) {
         console.error("Error processing message:", error);
-        ui.showErrorMessage(error.message);
         return false;
     }
 }
