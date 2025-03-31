@@ -133,11 +133,44 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !isset($_POST['action'])) {
         $stmt->bind_param("iisss", $user_id, $conversation_id, $date, $user_message, $bot_message);
         
         if ($stmt->execute()) {
-            // Update conversation's updated_at timestamp
-            $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW() WHERE id = ?");
-            $update_stmt->bind_param("i", $conversation_id);
-            $update_stmt->execute();
-            $update_stmt->close();
+            // Update conversation's updated_at timestamp and summary
+            $conversation_summary = null;
+            if (isset($data['conversation_summary'])) {
+                $conversation_summary = $data['conversation_summary'];
+            }
+            
+            if ($conversation_summary !== null) {
+                error_log("Updating conversation with summary");
+                
+                // Ensure the summary is properly formatted for SQL
+                $summary_to_store = $conversation_summary;
+                
+                // If it's too long, truncate it to prevent database issues
+                $max_summary_length = 16000; // Adjust based on your database field size
+                if (strlen($summary_to_store) > $max_summary_length) {
+                    error_log("Summary too long (" . strlen($summary_to_store) . " chars), truncating to " . $max_summary_length);
+                    $summary_to_store = substr($summary_to_store, 0, $max_summary_length);
+                }
+                
+                $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW(), conversation_summary = ? WHERE id = ?");
+                $update_stmt->bind_param("si", $summary_to_store, $conversation_id);
+                $update_result = $update_stmt->execute();
+                
+                // Additional logging for database errors
+                if (!$update_result) {
+                    error_log("MySQL Error updating summary: " . $update_stmt->error);
+                    error_log("MySQL Error number: " . $update_stmt->errno);
+                } else {
+                    error_log("Summary successfully updated in database. Affected rows: " . $update_stmt->affected_rows);
+                }
+                
+                error_log("Summary update result: " . ($update_result ? 'SUCCESS' : 'FAILED - ' . $update_stmt->error));
+            } else {
+                error_log("No summary to update, just updating timestamp");
+                $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW() WHERE id = ?");
+                $update_stmt->bind_param("i", $conversation_id);
+                $update_stmt->execute();
+            }
             
             // Get the title if needed
             $currentTitle = '';
@@ -394,10 +427,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
 // Handle chat saving with conversation tracking
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !isset($_POST['action']) && !isset($_GET['create_conversation']) && !isset($_GET['delete_conversation']) && !isset($_GET['rename_conversation'])) {
     $user_id = $_SESSION['user_id'];
-    $user_message = $_POST['user_message'] ?? '';
-    $bot_message = $_POST['bot_message'] ?? '';
-    $conversation_id = $_POST['conversation_id'] ?? 0;
-    $conversation_summary = $_POST['conversation_summary'] ?? null;
+    $data = json_decode(file_get_contents('php://input'), true) ?: $_POST;
+    
+    // Debug log for incoming data
+    error_log("===== SAVE MESSAGE DEBUG START =====");
+    error_log("Request method: " . $_SERVER['REQUEST_METHOD']);
+    error_log("Content type: " . ($_SERVER['CONTENT_TYPE'] ?? 'Not set'));
+    error_log("Raw request: " . file_get_contents('php://input'));
+    error_log("Parsed data: " . print_r($data, true));
+    
+    $user_message = $data['user_message'] ?? '';
+    $bot_message = $data['bot_message'] ?? '';
+    $conversation_id = $data['conversation_id'] ?? 0;
+    $conversation_summary = $data['conversation_summary'] ?? null;
+    
+    // Debug log for conversation summary specifically
+    error_log("Conversation ID: " . $conversation_id);
+    error_log("Summary present: " . ($conversation_summary !== null ? 'YES' : 'NO'));
+    if ($conversation_summary !== null) {
+        error_log("Summary content (first 100 chars): " . substr($conversation_summary, 0, 100));
+        error_log("Summary length: " . strlen($conversation_summary));
+    }
+    
     $date = date("Y-m-d H:i:s"); // Use full timestamp
     
     // If no conversation_id is provided, create a new conversation
@@ -414,6 +465,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
             $sql .= ", conversation_summary";
             $types .= "s";
             $params[] = $conversation_summary;
+            error_log("Adding summary to new conversation SQL");
         }
         
         $sql .= ") VALUES (?, ?";
@@ -422,12 +474,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
         }
         $sql .= ")";
         
+        error_log("SQL for new conversation: " . $sql);
+        
         $stmt = $conn->prepare($sql);
         $stmt->bind_param($types, ...$params);
         
         if ($stmt->execute()) {
             $conversation_id = $conn->insert_id;
+            error_log("Created new conversation with ID: " . $conversation_id);
         } else {
+            error_log("Failed to create conversation: " . $stmt->error);
             echo json_encode(["success" => false, "error" => "Failed to create conversation"]);
             exit;
         }
@@ -439,30 +495,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
         $stmt = $conn->prepare("INSERT INTO chats (user_id, conversation_id, date, user_message, bot_message) VALUES (?, ?, ?, ?, ?)");
         $stmt->bind_param("iisss", $user_id, $conversation_id, $date, $user_message, $bot_message);
         if ($stmt->execute()) {
+            error_log("Successfully inserted chat message");
+            
             // Update the conversation's updated_at timestamp and summary
             if ($conversation_summary !== null) {
+                error_log("Updating conversation with summary");
+                
+                // Ensure the summary is properly formatted for SQL
+                $summary_to_store = $conversation_summary;
+                
+                // If it's too long, truncate it to prevent database issues
+                $max_summary_length = 16000; // Adjust based on your database field size
+                if (strlen($summary_to_store) > $max_summary_length) {
+                    error_log("Summary too long (" . strlen($summary_to_store) . " chars), truncating to " . $max_summary_length);
+                    $summary_to_store = substr($summary_to_store, 0, $max_summary_length);
+                }
+                
                 $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW(), conversation_summary = ? WHERE id = ?");
-                $update_stmt->bind_param("si", $conversation_summary, $conversation_id);
+                $update_stmt->bind_param("si", $summary_to_store, $conversation_id);
+                $update_result = $update_stmt->execute();
+                
+                // Additional logging for database errors
+                if (!$update_result) {
+                    error_log("MySQL Error updating summary: " . $update_stmt->error);
+                    error_log("MySQL Error number: " . $update_stmt->errno);
+                } else {
+                    error_log("Summary successfully updated in database. Affected rows: " . $update_stmt->affected_rows);
+                }
+                
+                error_log("Summary update result: " . ($update_result ? 'SUCCESS' : 'FAILED - ' . $update_stmt->error));
             } else {
+                error_log("No summary to update, just updating timestamp");
                 $update_stmt = $conn->prepare("UPDATE conversations SET updated_at = NOW() WHERE id = ?");
                 $update_stmt->bind_param("i", $conversation_id);
+                $update_stmt->execute();
             }
-            $update_stmt->execute();
             $update_stmt->close();
+            
+            error_log("===== SAVE MESSAGE DEBUG END =====");
             
             echo json_encode([
                 "success" => true,
                 "conversation_id" => $conversation_id
             ]);
         } else {
+            error_log("Error saving message: " . $stmt->error);
             echo json_encode(["success" => false, "error" => "Error saving message"]);
         }
         $stmt->close();
     } else {
         // Only check for message content if we're actually trying to save a message
-        if (isset($_POST['user_message']) || isset($_POST['bot_message'])) {
+        if (isset($data['user_message']) || isset($data['bot_message'])) {
+            error_log("Missing required message content");
             echo json_encode(["success" => false, "error" => "Both user and bot messages are required"]);
         } else {
+            error_log("No messages to save, just returning conversation ID");
             echo json_encode([
                 "success" => true,
                 "conversation_id" => $conversation_id

@@ -236,8 +236,42 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
         const conversationSummary = window.pendingConversationSummary || null;
         if (conversationSummary) {
             console.log('%c[API] Including conversation summary with message save', 'color: #4CAF50');
+            console.log('%c[API] Summary content:', 'color: #4CAF50', conversationSummary.substring(0, 100) + '...');
+            console.log('%c[API] Summary length:', 'color: #4CAF50', conversationSummary.length);
             // Clear the pending summary
             window.pendingConversationSummary = null;
+        } else {
+            console.log('%c[API] No pending conversation summary found', 'color: #FF9800');
+        }
+        
+        // Create request payload
+        const payload = {
+            action: 'saveMessage',
+            user_message: userMessage,
+            bot_message: botMessage,
+            conversation_id: convId
+        };
+        
+        // Only add the summary if it exists and is a valid string
+        // This fixes issues where null, undefined, or other types might be passed
+        if (conversationSummary !== null && 
+            conversationSummary !== undefined && 
+            typeof conversationSummary === 'string' &&
+            conversationSummary.trim().length > 0) {
+            
+            payload.conversation_summary = conversationSummary;
+            console.log('%c[API] Added valid conversation_summary to payload', 'color: #4CAF50');
+        } else if (conversationSummary !== null && conversationSummary !== undefined) {
+            console.warn('%c[API] Summary exists but is not a valid string:', 'color: #FF9800', typeof conversationSummary);
+        }
+        
+        // Convert payload to JSON string for transmission
+        const payloadString = JSON.stringify(payload);
+        console.log('%c[API] Final payload length:', 'color: #2196F3', payloadString.length);
+        
+        // Double-check that the summary is in the payload if it should be
+        if (conversationSummary && !payloadString.includes('conversation_summary')) {
+            console.error('%c[API] CRITICAL ERROR: Summary not included in payload!', 'color: #F44336');
         }
         
         const response = await fetch('backend.php', {
@@ -245,13 +279,7 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                action: 'saveMessage',
-                user_message: userMessage,
-                bot_message: botMessage,
-                conversation_id: convId,
-                conversation_summary: conversationSummary
-            })
+            body: payloadString
         });
         
         if (!response.ok) {
@@ -624,6 +652,8 @@ Make your response thorough and informative while keeping the writing natural an
                 // Extract the new summary
                 const newSummary = match[1].trim();
                 console.log('%c[API] Extracted new conversation summary', 'color: #4CAF50');
+                console.log('%c[API] Summary content:', 'color: #4CAF50', newSummary.substring(0, 100) + '...');
+                console.log('%c[API] Summary length:', 'color: #4CAF50', newSummary.length);
                 
                 // Remove the summary from the visible response
                 aiResponse = aiResponse.replace(summaryRegex, '').trim();
