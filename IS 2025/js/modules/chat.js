@@ -386,45 +386,34 @@ export async function sendMessageToModel(message, model, baseSystemInstruction, 
                 displayResponse = responseForUser;
                 if (knowledgeResults && knowledgeResults.results && knowledgeResults.results.length > 0) {
                     try {
-                        console.log("Adding sources to response, found results:", knowledgeResults.results.length);
-                        console.log("Results filenames:", knowledgeResults.results.map(r => r.filename));
-                        
-                        try {
-                            // Use the async formatSources method to get HTML with links
-                            const sourcesHtml = await knowledgeBase.formatSources(knowledgeResults);
-                            console.log("Sources HTML:", sourcesHtml);
+                        console.log("Adding sources to response");
+                        // IMPORTANT: Check if already has sources section and remove it (avoiding duplicates)
+                        const removeDuplicateSources = (text) => {
+                            // Check for various formats of source sections
+                            const patterns = [
+                                /\n+\*?\*?Sources:?\*?\*?[\s\S]*$/i,  // Matches "Sources:" or "**Sources:**" to the end
+                                /\n+Sources:[\s\S]*$/i  // Matches "Sources:" to the end
+                            ];
                             
-                            if (sourcesHtml) {
-                                // Replace the simple sources with the nicer HTML version with links
-                                // Use a clear visual break between content and sources
-                                displayResponse = responseForUser + `\n\n---\n\n${sourcesHtml}`;
-                                
-                                // Log that sources were added
-                                console.log("Added sources HTML to display response");
-                            } else {
-                                console.warn("No sources HTML was returned");
-                                
-                                // Force inclusion of basic sources if HTML formatting fails
-                                const sourceNames = knowledgeResults.sources || 
-                                                 (knowledgeResults.results ? knowledgeResults.results.map(r => r.title) : []);
-                                displayResponse += "\n\n**Sources:**\n" + sourceNames.join(', ');
-                                console.log("Added basic sources as fallback");
+                            let cleanedText = text;
+                            for (const pattern of patterns) {
+                                if (pattern.test(cleanedText)) {
+                                    console.log("Removing duplicate sources section");
+                                    cleanedText = cleanedText.replace(pattern, '');
+                                }
                             }
-                        } catch (linkError) {
-                            console.error("Could not add linked sources:", linkError);
-                            // Fallback to simple text citations
-                            const sourceNames = knowledgeResults.sources || 
-                                              (knowledgeResults.results ? knowledgeResults.results.map(r => r.title) : []);
-                            displayResponse += "\n\n**Sources:**\n" + sourceNames.join(', ');
-                            console.log("Added basic sources after link error");
+                            return cleanedText;
+                        };
+
+                        // Clean the response first to remove any existing sources section
+                        displayResponse = removeDuplicateSources(responseForUser);
+                        // Use the async formatSources method to get HTML with links
+                        const sourcesHtml = await knowledgeBase.formatSources(knowledgeResults);
+                        if (sourcesHtml) {
+                            displayResponse = displayResponse + '\n\n---\n\n' + sourcesHtml;
                         }
-                    } catch (citationError) {
-                        console.error("Error formatting sources:", citationError);
-                        // Another fallback if the first catch doesn't handle it
-                        const sourceNames = knowledgeResults.sources || 
-                                          (knowledgeResults.results ? knowledgeResults.results.map(r => r.title) : []);
-                        displayResponse += "\n\n**Sources:**\n" + sourceNames.join(', ');
-                        console.log("Added basic sources after citation error");
+                    } catch (error) {
+                        console.error("Error formatting sources:", error);
                     }
                 }
             } catch (aiError) {

@@ -37,7 +37,9 @@ export function addMessageToUI(sender, message) {
             // For model messages, parse markdown
             const hasSourceSection = message.includes('---') || 
                                    message.includes('**Sources:**') || 
-                                   message.includes('<div class="sources">');
+                                   message.includes('<div class="sources-container">') || 
+                                   message.includes('<h3>Sources:</h3>') ||
+                                   message.includes('Sources:');
             
             if (hasSourceSection) {
                 console.log("Message contains source section");
@@ -45,107 +47,68 @@ export function addMessageToUI(sender, message) {
                 // Split the message into content and sources
                 let mainContent, sourcesContent;
                 
-                // Try different splitting patterns
-                if (message.includes('---')) {
+                // Check if we have a formatted HTML source section
+                if (message.includes('<div class="sources-container">')) {
+                    const parts = message.split('<div class="sources-container">');
+                    mainContent = parts[0];
+                    sourcesContent = parts.length > 1 ? '<div class="sources-container">' + parts[1] : '';
+                    
+                    // Render main content with markdown
+                    contentDiv.innerHTML = marked.parse(mainContent);
+                    
+                    // Add HTML sources directly if present
+                    if (sourcesContent) {
+                        console.log("Using pre-formatted HTML sources section");
+                        const sourcesDiv = document.createElement('div');
+                        sourcesDiv.className = 'message-sources';
+                        sourcesDiv.innerHTML = sourcesContent;
+                        contentDiv.appendChild(sourcesDiv);
+                    }
+                } 
+                // Try different splitting patterns for text-based sources
+                else if (message.includes('---')) {
                     const parts = message.split(/---+/);
                     mainContent = parts[0];
                     sourcesContent = parts.length > 1 ? parts[1] : '';
-                } else if (message.includes('**Sources:**')) {
-                    const parts = message.split('**Sources:**');
+                    
+                    // Render main content with markdown
+                    const renderedContent = marked.parse(mainContent);
+                    contentDiv.innerHTML = renderedContent;
+                    
+                    // Add sources section if present
+                    if (sourcesContent) {
+                        processTextBasedSources(sourcesContent, contentDiv);
+                    }
+                } else if (message.includes('Sources:')) {
+                    // Look for Sources: with or without markdown formatting
+                    const srcPattern = /(\*\*)?Sources:(\*\*)?/;
+                    const parts = message.split(srcPattern);
+                    
+                    // The parts will be [content before, **, "Sources:", **, content after]
+                    // or simply [content before, undefined, "Sources:", undefined, content after]
                     mainContent = parts[0];
-                    sourcesContent = parts.length > 1 ? `**Sources:**${parts[1]}` : '';
+                    sourcesContent = parts.length > 4 ? `Sources:${parts[4]}` : '';
+                    
+                    // Render main content with markdown
+                    const renderedContent = marked.parse(mainContent);
+                    contentDiv.innerHTML = renderedContent;
+                    
+                    // Add sources section if present
+                    if (sourcesContent) {
+                        processTextBasedSources(sourcesContent, contentDiv);
+                    }
                 } else {
                     mainContent = message;
                     sourcesContent = '';
-                }
-                
-                // Render main content with markdown
-                contentDiv.innerHTML = marked.parse(mainContent);
-                
-                // Add sources section if present
-                if (sourcesContent) {
-                    const sourcesDiv = document.createElement('div');
-                    sourcesDiv.className = 'message-sources';
                     
-                    // Check if we need to convert source references to actual links
-                    if (sourcesContent.includes('**Sources:**') && window.NUTRITION_SOURCES) {
-                        try {
-                            console.log("Trying to convert sources to clickable links");
-                            // Get the sources part
-                            const sourceLines = sourcesContent.split('\n').filter(line => line.trim());
-                            
-                            // Create a new HTML block for sources with links
-                            let enhancedSourcesHtml = '<h4>Sources:</h4><ul>';
-                            
-                            // Process each source line - most will be like "1. Source Name"
-                            for (const line of sourceLines) {
-                                // Skip the "Sources:" header line
-                                if (line.includes("**Sources:**") || line.trim() === '') continue;
-                                
-                                // Extract the source name (removes numbers and periods at start)
-                                const sourceNameMatch = line.match(/^\d+\.\s*(.+)$/);
-                                if (sourceNameMatch) {
-                                    const sourceName = sourceNameMatch[1].trim();
-                                    
-                                    // Look for matching file in NUTRITION_SOURCES
-                                    let foundUrl = null;
-                                    
-                                    // Access sources object properly based on the structure
-                                    const sourcesData = window.NUTRITION_SOURCES.sources || window.NUTRITION_SOURCES;
-                                    
-                                    // Direct filename match (if sourceName is directly a key)
-                                    if (sourcesData[sourceName + '.txt']) {
-                                        foundUrl = sourcesData[sourceName + '.txt'];
-                                    } else {
-                                        // Try to find a match by converting to filename format
-                                        const possibleFilename = sourceName.replace(/\s+/g, '_') + '.txt';
-                                        if (sourcesData[possibleFilename]) {
-                                            foundUrl = sourcesData[possibleFilename];
-                                        } else {
-                                            // Try fuzzy matching
-                                            const sourceKeys = Object.keys(sourcesData);
-                                            const matchingKey = sourceKeys.find(key => 
-                                                key.toLowerCase().includes(sourceName.toLowerCase()) || 
-                                                sourceName.toLowerCase().includes(key.replace(/_/g, ' ').replace('.txt', '').toLowerCase())
-                                            );
-                                            
-                                            if (matchingKey) {
-                                                foundUrl = sourcesData[matchingKey];
-                                            }
-                                        }
-                                    }
-                                    
-                                    if (foundUrl) {
-                                        enhancedSourcesHtml += `<li><a href="${foundUrl}" target="_blank">${sourceName}</a></li>`;
-                                        console.log(`Added link for source: ${sourceName}`);
-                                    } else {
-                                        enhancedSourcesHtml += `<li>${sourceName}</li>`;
-                                        console.log(`No link found for source: ${sourceName}`);
-                                    }
-                                } else {
-                                    // If the line doesn't match the expected format, just add it as is
-                                    enhancedSourcesHtml += `<li>${line}</li>`;
-                                }
-                            }
-                            
-                            enhancedSourcesHtml += '</ul>';
-                            sourcesDiv.innerHTML = enhancedSourcesHtml;
-                            console.log("Sources converted to links successfully");
-                        } catch (error) {
-                            console.error("Error converting sources to links:", error);
-                            // Fallback to regular markdown if our link conversion fails
-                            sourcesDiv.innerHTML = marked.parse(sourcesContent);
-                        }
-                    } else {
-                        // Regular parsing if no sources or source data
-                        sourcesDiv.innerHTML = marked.parse(sourcesContent);
-                    }
-                    
-                    contentDiv.appendChild(sourcesDiv);
+                    // Just render the whole thing as markdown
+                    const renderedContent = marked.parse(mainContent);
+                    contentDiv.innerHTML = renderedContent;
                 }
             } else {
                 // Regular markdown parsing for model messages
-                contentDiv.innerHTML = marked.parse(message);
+                const renderedContent = marked.parse(message);
+                contentDiv.innerHTML = renderedContent;
             }
         }
     } catch (error) {
@@ -163,6 +126,113 @@ export function addMessageToUI(sender, message) {
     
     // Scroll to bottom
     chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// Helper function to process text-based source sections
+function processTextBasedSources(sourcesContent, contentDiv) {
+    const sourcesDiv = document.createElement('div');
+    sourcesDiv.className = 'message-sources';
+    
+    try {
+        console.log("Processing text-based sources");
+        
+        // Parse the sources content to look for numbered sources
+        const sourceLines = sourcesContent.split('\n').filter(line => line.trim());
+        
+        // Create a new HTML block for sources with proper IDs for linking
+        let enhancedSourcesHtml = '<div class="sources-container"><h3>Sources:</h3><ul>';
+        
+        // Track the sources we've processed to handle renumbering
+        let processedSources = [];
+        
+        // First pass: extract source titles from different formats
+        for (const line of sourceLines) {
+            // Skip lines that don't look like source entries
+            if (!line.trim() || line.includes("Sources:") && !line.match(/\d+\.\s+/)) continue;
+            
+            // Try to match different source line formats
+            // Format 1: 1. Source Title
+            const numberedFormat = line.match(/^\s*(\d+)\.\s+(.+)$/);
+            // Format 2: - Source Title
+            const bulletFormat = line.match(/^\s*[-•]\s+(.+)$/);
+            // Format 3: Source Title (no prefix)
+            const plainFormat = !numberedFormat && !bulletFormat && line.trim();
+            
+            let sourceTitle = '';
+            
+            if (numberedFormat) {
+                sourceTitle = numberedFormat[2].trim();
+            } else if (bulletFormat) {
+                sourceTitle = bulletFormat[1].trim();
+            } else if (plainFormat) {
+                sourceTitle = line.trim();
+                // Remove "Sources:" prefix if present
+                if (sourceTitle.startsWith("Sources:")) {
+                    sourceTitle = sourceTitle.substring(8).trim();
+                }
+            }
+            
+            if (sourceTitle) {
+                processedSources.push(sourceTitle);
+            }
+        }
+        
+        // Second pass: build the HTML with proper IDs for the renumbered sources
+        processedSources.forEach((sourceTitle, index) => {
+            const sourceNumber = index + 1;
+            
+            // Look for matching file in NUTRITION_SOURCES
+            let foundUrl = null;
+            
+            // Access sources object properly based on the structure
+            if (window.NUTRITION_SOURCES) {
+                const sourcesData = window.NUTRITION_SOURCES.sources || window.NUTRITION_SOURCES;
+                
+                // Try to find a match for the source title
+                // Convert to filename format
+                const possibleFilename = sourceTitle.replace(/\s+/g, '_') + '.txt';
+                if (sourcesData[possibleFilename]) {
+                    foundUrl = sourcesData[possibleFilename];
+                } else {
+                    // Try another format with colons removed
+                    const altFilename = sourceTitle.replace(/:/g, '').replace(/\s+/g, '_') + '.txt';
+                    if (sourcesData[altFilename]) {
+                        foundUrl = sourcesData[altFilename];
+                    } else {
+                        // Try fuzzy matching
+                        const sourceKeys = Object.keys(sourcesData);
+                        const matchingKey = sourceKeys.find(key => 
+                            key.toLowerCase().includes(sourceTitle.toLowerCase().replace(/\s+/g, '_')) || 
+                            sourceTitle.toLowerCase().includes(key.replace(/_/g, ' ').replace('.txt', '').toLowerCase())
+                        );
+                        
+                        if (matchingKey) {
+                            foundUrl = sourcesData[matchingKey];
+                        }
+                    }
+                }
+            }
+            
+            // Add source list item with ID for linking from citations
+            if (foundUrl) {
+                enhancedSourcesHtml += `<li id="source-${sourceNumber}"><a href="${foundUrl}" target="_blank">${sourceTitle}</a></li>`;
+                console.log(`Added link for source ${sourceNumber}: ${sourceTitle}`);
+            } else {
+                enhancedSourcesHtml += `<li id="source-${sourceNumber}">${sourceTitle}</li>`;
+                console.log(`No link found for source ${sourceNumber}: ${sourceTitle}`);
+            }
+        });
+        
+        enhancedSourcesHtml += '</ul></div>';
+        sourcesDiv.innerHTML = enhancedSourcesHtml;
+        console.log("Sources processed successfully");
+    } catch (error) {
+        console.error("Error processing sources:", error);
+        // Fallback to regular markdown if processing fails
+        sourcesDiv.innerHTML = marked.parse(sourcesContent);
+    }
+    
+    contentDiv.appendChild(sourcesDiv);
 }
 
 // Helper function to escape HTML

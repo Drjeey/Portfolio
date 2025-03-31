@@ -87,10 +87,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !isset($_POST['action'])) {
         
         // If conversation_id is 'new', create a new conversation
         if ($conversation_id === 'new') {
-            // Create a simple title from user message
-            $title = strlen($user_message) <= 40 ? 
-                $user_message : 
-                (substr($user_message, 0, 37) . '...');
+            // Use a placeholder title that will be updated by the AI title generator
+            $title = "New Nutrition Chat";
             
             $stmt = $conn->prepare("INSERT INTO conversations (user_id, title) VALUES (?, ?)");
             $stmt->bind_param("is", $user_id, $title);
@@ -115,10 +113,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !isset($_POST['action'])) {
             $count_stmt->close();
             
             if ($count_data['count'] == 0) {
-                // This is the first message - update the title
-                $title = strlen($user_message) <= 40 ? 
-                    $user_message : 
-                    (substr($user_message, 0, 37) . '...');
+                // This is the first message - use a placeholder title
+                $title = "New Nutrition Chat";
                 
                 $update_title_stmt = $conn->prepare("UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?");
                 $update_title_stmt->bind_param("sis", $title, $conversation_id, $user_id);
@@ -205,10 +201,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !isset($_POST['action'])) {
             exit;
         }
         
-        // Create a simple title from the user message
-        $title = strlen($user_message) <= 40 ? 
-            $user_message : 
-            (substr($user_message, 0, 37) . '...');
+        // Call Gemini to generate a descriptive title based on the user message
+        $titlePrompt = "As a nutrition assistant, create a short, descriptive title (5 words or less) that captures the essence of this conversation. Don't repeat the user's question verbatim. Instead, extract the key nutrition topic or concept and create a concise, professional title.
+
+User message: \"$user_message\"
+
+Example transformations:
+- \"What are the health benefits of eating apples?\" → \"Apple Health Benefits\"
+- \"Is a keto diet good for weight loss?\" → \"Keto Diet Effectiveness\"
+- \"What foods are high in protein that are vegan?\" → \"Vegan Protein Sources\"
+
+Title:";
+
+        // Call Gemini API for title generation
+        $geminiResponse = callGeminiAPI($titlePrompt, 0.5, 50);
+        
+        if (isset($geminiResponse['text']) && !empty($geminiResponse['text'])) {
+            // Clean up the title
+            $title = trim($geminiResponse['text']);
+            // Remove quotes if present
+            $title = trim($title, '"\'');
+            // Limit length
+            if (strlen($title) > 50) {
+                $title = substr($title, 0, 47) . '...';
+            }
+        } else {
+            // Fallback title if API call fails
+            $title = "Nutrition Chat " . date('g:i A');
+        }
         
         // Update the conversation title
         $stmt = $conn->prepare("UPDATE conversations SET title = ? WHERE id = ? AND user_id = ?");
@@ -382,20 +402,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && !iss
     
     // If no conversation_id is provided, create a new conversation
     if (empty($conversation_id)) {
-        // Generate a better title from the user message
-        if (strlen($user_message) <= 40) {
-            // Use the entire message if it's short
-            $title = $user_message;
-        } else {
-            // Try to extract the main topic/question from the first sentence
-            $firstSentence = preg_split('/[.!?]/', $user_message)[0];
-            if (strlen($firstSentence) <= 40) {
-                $title = $firstSentence;
-            } else {
-                // Just take the first 37 characters and add ellipsis
-                $title = substr($user_message, 0, 37) . '...';
-            }
-        }
+        // Use a placeholder title that will be replaced by AI-generated title later
+        $title = "New Nutrition Chat";
         
         // Set initial summary if available
         $sql = "INSERT INTO conversations (user_id, title";
@@ -1364,17 +1372,6 @@ function synthesizeAnswer($query, $context, $results) {
         return "I don't have specific information about that in my nutrition knowledge base. Could you please ask a different nutrition-related question, or rephrase your current question?";
     }
     
-    // Create source references for citation
-    $sources = [];
-    foreach ($results as $index => $result) {
-        $sourceNum = $index + 1;
-        $title = !empty($result['title']) ? $result['title'] : "Source $sourceNum";
-        $sources[] = $title;
-    }
-    
-    // Combine source references
-    $sourceReferences = implode(", ", $sources);
-    
     // Create system prompt with instructions for answer formatting
     $systemPrompt = <<<EOD
 You are NutriGuide, a specialized nutritional assistant. Your task is to answer questions about nutrition accurately, using only information from the provided context. Format your response in clear, concise markdown.
@@ -1382,20 +1379,18 @@ You are NutriGuide, a specialized nutritional assistant. Your task is to answer 
 IMPORTANT INSTRUCTIONS:
 1. Use ONLY information from the provided context to answer the question.
 2. If you cannot answer the question from the context, say "I don't have enough information about that topic."
-3. Your answers should be concise but complete.
+3. Your answers should be thorough, detailed and comprehensive while remaining readable.
 4. DO NOT mention that you're using a specific context or that your knowledge comes from specific sources in the main answer.
 5. DO NOT use first-person language like "In the provided context" or "Based on the information I have."
 6. Format your response in proper markdown with sections and bullet points where appropriate.
-7. ALWAYS include source citations at the end of your response with markdown formatting.
-8. At the end of your response, ALWAYS include a "Sources:" section with references to all sources you used.
+7. DO NOT include inline citations (like [1], [2]) in your answer text.
+8. DO NOT include a "Sources:" section - the system will add this automatically.
 
 FORMAT YOUR ANSWER AS FOLLOWS:
-1. Main answer with proper markdown formatting
-2. Two line breaks
-3. **Sources:**
-4. List of numbered sources
+1. Main answer with proper markdown formatting - make it thorough and comprehensive
+2. No sources section - this will be added by the system
 
-Remember to be friendly and helpful, but focus on nutrition information that's backed by the sources provided.
+Remember to be friendly and helpful, but focus on providing detailed nutrition information that's backed by the sources provided.
 EOD;
 
     // Construct prompt for Gemini API
@@ -1473,18 +1468,7 @@ EOD;
     // Extract answer text
     $answerText = $responseData['candidates'][0]['content']['parts'][0]['text'];
     
-    // Ensure we have a sources section
-    if (!preg_match('/\*\*Sources:\*\*/i', $answerText)) {
-        // Add sources section if missing
-        $answerText .= "\n\n**Sources:**\n";
-        foreach ($results as $index => $result) {
-            $sourceNum = $index + 1;
-            $title = !empty($result['title']) ? $result['title'] : "Source $sourceNum";
-            $answerText .= "$sourceNum. $title\n";
-        }
-    }
-    
-    error_log("INFO: Successfully synthesized answer with sources");
+    error_log("INFO: Successfully synthesized answer");
     return $answerText;
 }
 
@@ -1589,5 +1573,84 @@ function updateConversationSummary($conn, $conversation_id, $newSummary = null) 
     $update_stmt->close();
     
     return $newSummary;
+}
+
+/**
+ * Helper function to call Gemini API for text generation
+ * 
+ * @param string $prompt The text prompt to send to the API
+ * @param float $temperature Temperature setting (0.0-1.0)
+ * @param int $maxTokens Maximum tokens to generate
+ * @return array|null Response with text or null on error
+ */
+function callGeminiAPI($prompt, $temperature = 0.7, $maxTokens = 800) {
+    $apiKey = getenv('GEMINI_API_KEY');
+    
+    if (!$apiKey) {
+        error_log("ERROR: Gemini API key not configured for text generation");
+        return null;
+    }
+    
+    // Prepare request payload
+    $payload = [
+        "contents" => [
+            [
+                "role" => "user",
+                "parts" => [
+                    ["text" => $prompt]
+                ]
+            ]
+        ],
+        "generationConfig" => [
+            "temperature" => $temperature,
+            "topP" => 0.8,
+            "topK" => 40,
+            "maxOutputTokens" => $maxTokens,
+        ]
+    ];
+    
+    // Initialize cURL session
+    $ch = curl_init();
+    
+    // Set cURL options
+    curl_setopt($ch, CURLOPT_URL, "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key=" . $apiKey);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_POST, 1);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    
+    // Execute cURL request
+    $response = curl_exec($ch);
+    
+    // Check for cURL errors
+    if (curl_errno($ch)) {
+        error_log("ERROR: Gemini API request failed: " . curl_error($ch));
+        curl_close($ch);
+        return null;
+    }
+    
+    // Get HTTP status code
+    $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    // Check if request was successful
+    if ($statusCode !== 200) {
+        error_log("ERROR: Gemini API returned status code $statusCode: $response");
+        return null;
+    }
+    
+    // Parse response
+    $responseData = json_decode($response, true);
+    
+    // Check if response is valid
+    if (!$responseData || !isset($responseData['candidates'][0]['content']['parts'][0]['text'])) {
+        error_log("ERROR: Invalid response from Gemini API: " . print_r($response, true));
+        return null;
+    }
+    
+    // Extract answer text
+    $answerText = $responseData['candidates'][0]['content']['parts'][0]['text'];
+    
+    return ['text' => $answerText];
 }
 ?>

@@ -271,6 +271,36 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
     }
 }
 
+// Save chat messages with conversation summary
+export async function saveChatMessages(userMessage, botMessage, conversationId, conversationSummary = null) {
+    try {
+        // Log that we're using the more comprehensive saving function
+        console.log('%c[API] Using saveChatMessages with conversation summary', 'color: #9C27B0');
+        
+        // If no conversation ID, treat as new conversation
+        const convId = conversationId || 'new';
+        
+        // Save the summary in a global variable if it's provided
+        if (conversationSummary) {
+            window.pendingConversationSummary = conversationSummary;
+            console.log('%c[API] Set pending conversation summary for save', 'color: #4CAF50');
+        }
+        
+        // Use the existing saveMessage function to handle the actual save
+        const result = await saveMessage(userMessage, botMessage, convId);
+        
+        // Add flag to indicate it's the first message if it's a new conversation
+        if (result.success && convId === 'new') {
+            result.isFirstMessage = true;
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('%c[API ERROR] Exception in saveChatMessages:', 'color: #f44336', error);
+        return { success: false, error: error.message };
+    }
+}
+
 // Update conversation title
 export async function updateConversationTitle(newTitle, conversationId) {
     try {
@@ -324,7 +354,9 @@ export async function sendChatMessage(conversationId, message) {
         // Call the AI service using the proxy
         console.log('%c[API] Calling AI service through proxy', 'color: #9C27B0');
         
-        const systemInstruction = "You are NutriGuide, a specialized nutrition assistant powered by Nourish 1.0.";
+        // Enhanced system instruction with context awareness guidance
+        const systemInstruction = "You are NutriGuide, a specialized nutrition assistant powered by Nourish 1.0. While nutrition is your primary focus, you can engage in normal conversation as well. You have access to conversation context in the form of summaries, which means you can remember previous exchanges in this conversation. If asked about memories or what was discussed before, you should acknowledge that you can recall previous messages in the current conversation based on the provided context/summary. If this is the first message in a conversation (no summary provided), you can explain that this is the beginning of your conversation together.";
+        
         const aiResponse = await callGeminiProxy(message, systemInstruction);
         
         // Now we have the AI response, handle saving it
@@ -430,12 +462,20 @@ async function callGeminiProxy(message, systemInstruction) {
         }
     }
     
+    // Enhanced citation instructions for consistent formatting
+    const citationInstruction = `
+DO NOT use inline citations in your response. 
+Instead, provide a comprehensive answer using the information from the sources.
+At the end of your response, list all sources you referenced under a "Sources:" section.
+Make your response thorough and informative while keeping the writing natural and readable.
+`;
+    
     // Build the prompt based on knowledge base results
     if (knowledgeResults && knowledgeResults.results && knowledgeResults.results.length > 0) {
         console.log('%c[API] Using knowledge base results to enhance prompt', 'color: #9C27B0');
         
         // Start with system instruction
-        enhancedPrompt = systemInstruction + "\n\n";
+        enhancedPrompt = systemInstruction + "\n\n" + citationInstruction + "\n\n";
         
         // Add conversation summary if available
         if (conversationSummary) {
@@ -454,7 +494,7 @@ async function callGeminiProxy(message, systemInstruction) {
         
         // Add the user query
         enhancedPrompt += "User query: " + message + "\n\n";
-        enhancedPrompt += "Based on the nutrition information above, please provide a helpful response. Include references to the sources when appropriate.";
+        enhancedPrompt += "Based on the nutrition information above, please provide a thorough, comprehensive response that addresses the query in detail. DO NOT include a 'Sources:' section at the end - this will be added automatically by the system.";
     } else {
         // Start with system instruction
         enhancedPrompt = systemInstruction + "\n\n";
@@ -483,9 +523,9 @@ async function callGeminiProxy(message, systemInstruction) {
     
     // If we have a conversation summary, let's add a special instruction to update it
     if (conversationSummary) {
-        requestConfig.contents += "\n\nAfter answering the user's query, please generate an updated conversation summary that captures the key points of the entire conversation so far, including this new exchange. Format it as: [SUMMARY] your summary text [/SUMMARY]";
+        requestConfig.contents += "\n\nAfter answering the user's query, please generate an updated conversation summary that captures the key points of the entire conversation so far, including this new exchange. The summary should include enough detail to help you remember what was discussed, including specific questions asked and information provided. Format it as: [SUMMARY] your comprehensive summary text [/SUMMARY]";
     } else {
-        requestConfig.contents += "\n\nAfter answering the user's query, please generate a brief conversation summary that captures the key points of this exchange. Format it as: [SUMMARY] your summary text [/SUMMARY]";
+        requestConfig.contents += "\n\nAfter answering the user's query, please generate a brief conversation summary that captures the key points of this exchange. The summary should include the user's question and the main points of your response to help you recall this conversation later. Format it as: [SUMMARY] your summary text [/SUMMARY]";
     }
     
     const response = await fetch('gemini-proxy.php', {

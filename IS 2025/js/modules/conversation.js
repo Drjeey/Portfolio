@@ -31,7 +31,16 @@ export async function generateConversationTitle(userMessage, conversationId, mod
         }
         
         // Get title prompt - specifically for nutrition topics
-        const titlePrompt = `Please generate a short, descriptive title (5 words or less) for a nutrition conversation that starts with this message: "${userMessage}". Focus on the nutrition or dietary aspect of the question.`;
+        const titlePrompt = `As a nutrition assistant, create a short, descriptive title (5 words or less) that captures the essence of this conversation. Don't repeat the user's question verbatim. Instead, extract the key nutrition topic or concept and create a concise, professional title.
+
+User message: "${userMessage}"
+
+Example transformations:
+- "What are the health benefits of eating apples?" → "Apple Health Benefits"
+- "Is a keto diet good for weight loss?" → "Keto Diet Effectiveness"
+- "What foods are high in protein that are vegan?" → "Vegan Protein Sources"
+
+Title:`;
         
         // Get AI response for the title using the new API format through our proxy
         const response = await fetch('gemini-proxy.php', {
@@ -474,6 +483,22 @@ export function getCurrentConversationSummary() {
 // Set current conversation summary
 export function setCurrentConversationSummary(summary) {
     currentState.conversationSummary = summary;
+}
+
+// Get message count for a conversation
+export async function getConversationMessageCount(conversationId) {
+    if (!conversationId) {
+        console.warn("No conversation ID provided to getConversationMessageCount");
+        return 0;
+    }
+    
+    try {
+        console.log(`Getting message count for conversation: ${conversationId}`);
+        return await api.getMessageCount(conversationId);
+    } catch (error) {
+        console.error("Error getting conversation message count:", error);
+        return 0;
+    }
 }
 
 // Set current conversation ID and title

@@ -377,27 +377,80 @@ const knowledgeBase = {
         
         console.log("Formatting sources for display from results:", knowledgeData.results.length);
         
-        // Create Markdown-formatted list of sources
-        let sourcesMarkdown = "**Sources:**\n";
+        // Create HTML-formatted list of sources with links
+        let sourcesHTML = '<div class="sources-container"><h3>Sources:</h3><ul>';
         
-        // Deduplicate sources by title to avoid repetition
-        const seenTitles = new Set();
+        // Deduplicate sources by filename to avoid repetition
+        const seenFilenames = new Set();
+        const sourceMap = new Map(); // Map to store title -> filename mappings
         
+        // Predefined mappings for known format differences
+        const knownMappings = {
+            "Vitamins and Minerals: Essential Micronutrients": "Vitamins_and_Minerals_Essential_Micronutrients.txt",
+            "Nutrition Through Life Stages: Changing Needs from Infancy to Older Adulthood": "Nutrition_Through_Life_Stages.txt"
+        };
+        
+        // Helper function to normalize title to filename
+        const normalizeToFilename = (title) => {
+            // Check if we have a known mapping
+            if (knownMappings[title]) {
+                return knownMappings[title];
+            }
+            
+            // Replace colons with underscores
+            let filename = title.replace(/:/g, '');
+            // Replace spaces with underscores
+            filename = filename.replace(/\s+/g, '_');
+            
+            // Ensure it has the .txt extension
+            if (!filename.endsWith('.txt')) {
+                filename += '.txt';
+            }
+            
+            return filename;
+        };
+        
+        // First pass: build mapping of titles to filenames
+        knowledgeData.results.forEach(result => {
+            const title = result.title || result.filename || '';
+            if (!title) return;
+            
+            const normalizedFilename = normalizeToFilename(title);
+            sourceMap.set(title, normalizedFilename);
+        });
+        
+        // Log the source map for debugging
+        console.log("Source mapping:", Object.fromEntries(sourceMap));
+        
+        // Second pass: create list items with links
         knowledgeData.results.forEach((result, index) => {
             const title = result.title || result.filename || `Source ${index + 1}`;
             
+            // Get normalized filename
+            const filename = sourceMap.get(title) || normalizeToFilename(title);
+            
             // Skip duplicates
-            if (seenTitles.has(title)) {
+            if (seenFilenames.has(filename)) {
                 return;
             }
-            seenTitles.add(title);
+            seenFilenames.add(filename);
             
-            // Format the source item
-            sourcesMarkdown += `${index + 1}. ${title}\n`;
+            // Get URL if available
+            const url = this.sourceUrls && this.sourceUrls[filename];
+            
+            // Format the source item with link if URL exists
+            if (url) {
+                sourcesHTML += `<li><a href="${url}" target="_blank">${title}</a></li>`;
+                console.log(`Added source link for ${title} -> ${filename} -> ${url}`);
+            } else {
+                sourcesHTML += `<li>${title}</li>`;
+                console.log(`No URL found for ${filename}. Available keys:`, this.sourceUrls ? Object.keys(this.sourceUrls) : 'No sources loaded');
+            }
         });
         
-        console.log("Formatted sources markdown:", sourcesMarkdown);
-        return sourcesMarkdown;
+        sourcesHTML += '</ul></div>';
+        console.log("Formatted sources HTML:", sourcesHTML);
+        return sourcesHTML;
     },
     
     /**
