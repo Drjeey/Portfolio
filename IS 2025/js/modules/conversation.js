@@ -532,13 +532,35 @@ export function getTitleHasBeenUpdated() {
     return currentState.titleHasBeenUpdated;
 }
 
+// Set whether the current conversation title has been updated
+export function setTitleHasBeenUpdated(value) {
+    currentState.titleHasBeenUpdated = !!value;
+    console.log("Title has been updated flag set to:", currentState.titleHasBeenUpdated);
+}
+
 // Listen for title update events from API
 document.addEventListener('conversationTitleUpdated', async (event) => {
-    const { conversationId, title } = event.detail;
+    const { conversationId, title, requiresGeneration, userMessage } = event.detail;
     
     // Show notification about the new title
     if (typeof ui !== 'undefined' && typeof ui.showTitleNotification === 'function') {
         ui.showTitleNotification(title);
+    }
+    
+    // If this is a new conversation or first message that needs a proper title
+    if (requiresGeneration && userMessage && conversationId) {
+        console.log("Title requires generation, initiating process...");
+        
+        try {
+            // Get the current model reference from window
+            const model = window.currentModel || window.ENV.GEMINI_MODEL_NAME || 'gemini-1.5-flash';
+            
+            // Generate a proper title
+            await generateConversationTitle(userMessage, conversationId, model);
+            console.log("Generated title for new conversation via event listener");
+        } catch (err) {
+            console.error("Failed to generate title via event:", err);
+        }
     }
     
     // Update conversation list if we're in a conversation

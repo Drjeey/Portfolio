@@ -1111,6 +1111,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_SESSION['user_id']) && isse
     exit;
 }
 
+// Handle get_message_count action
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_message_count') {
+    header('Content-Type: application/json');
+    $user_id = $_SESSION['user_id'] ?? 0;
+    $conversation_id = $_GET['conversation_id'] ?? '';
+    
+    if (empty($conversation_id)) {
+        echo json_encode(['success' => false, 'error' => 'Conversation ID is required']);
+        exit;
+    }
+    
+    // Make sure database connection is valid
+    if (!$conn->ping()) {
+        error_log("Database connection lost, attempting to reconnect");
+        $conn->close();
+        $conn = getDbConnection();
+        if (!$conn) {
+            error_log("Failed to reconnect to database");
+            echo json_encode(['success' => false, 'error' => 'Database connection error']);
+            exit;
+        }
+    }
+    
+    // Get message count
+    $stmt = $conn->prepare("SELECT COUNT(*) as count FROM chats WHERE conversation_id = ? AND user_id = ?");
+    
+    if (!$stmt) {
+        error_log("Prepare failed: " . $conn->error);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $conn->error]);
+        exit;
+    }
+    
+    $stmt->bind_param('ii', $conversation_id, $user_id);
+    
+    if (!$stmt->execute()) {
+        error_log("Execute failed: " . $stmt->error);
+        echo json_encode(['success' => false, 'error' => 'Database error: ' . $stmt->error]);
+        exit;
+    }
+    
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    $count = $row['count'];
+    
+    $stmt->close();
+    
+    // Return the count
+    echo json_encode([
+        'success' => true,
+        'count' => (int)$count
+    ]);
+    exit;
+}
+
 $conn->close();
 
 /**
