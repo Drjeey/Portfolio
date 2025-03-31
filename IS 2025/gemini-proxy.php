@@ -147,4 +147,17 @@ if (isset($responseData['candidates'][0]['content']['parts'][0]['text'])) {
 echo json_encode([
     "text" => $generatedText
 ]);
+
+// Log response for debugging
+if (strpos($generatedText, '[SUMMARY]') !== false && strpos($generatedText, '[/SUMMARY]') !== false) {
+    $summaryPattern = '/\[SUMMARY\](.*?)\[\/SUMMARY\]/s';
+    if (preg_match($summaryPattern, $generatedText, $matches)) {
+        $extractedSummary = trim($matches[1]);
+        error_log("Extracted conversation summary: " . substr($extractedSummary, 0, 100) . "...");
+    } else {
+        error_log("Summary format found but could not extract with regex");
+    }
+} else {
+    error_log("No summary format found in response");
+}
 ?> 

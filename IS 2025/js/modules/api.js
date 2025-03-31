@@ -71,15 +71,28 @@ export async function fetchConversation(conversationId) {
 
 // Fetch conversation history for AI context
 export async function fetchConversationHistory(conversationId) {
+    console.log('%c[API] Fetching conversation history for context:', 'color: #9C27B0', conversationId);
+    
     try {
         const historyResponse = await fetch(`backend.php?get_history=true&conversation_id=${conversationId}`);
         if (historyResponse.ok) {
-            return await historyResponse.json();
+            const data = await historyResponse.json();
+            
+            // Log if summary is found
+            if (data.summary) {
+                console.log('%c[API] Conversation summary found in history response', 'color: #4CAF50');
+                console.log('%c[API] Summary preview:', 'color: #4CAF50', data.summary.substring(0, 100) + '...');
+            } else {
+                console.log('%c[API] No conversation summary found in history response', 'color: #FFC107');
+            }
+            
+            return data;
         } else {
+            console.error('%c[API ERROR] Failed to retrieve conversation history:', 'color: #f44336', historyResponse.status);
             throw new Error("Error retrieving conversation history");
         }
     } catch (error) {
-        console.error("Error fetching conversation history:", error);
+        console.error('%c[API ERROR] Exception fetching conversation history:', 'color: #f44336', error);
         throw error;
     }
 }
@@ -201,6 +214,14 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
         
         console.log(`Saving message to conversation ${convId}`);
         
+        // Check if we have a pending conversation summary
+        const conversationSummary = window.pendingConversationSummary || null;
+        if (conversationSummary) {
+            console.log('%c[API] Including conversation summary with message save', 'color: #4CAF50');
+            // Clear the pending summary
+            window.pendingConversationSummary = null;
+        }
+        
         const response = await fetch('backend.php', {
             method: 'POST',
             headers: {
@@ -210,7 +231,8 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
                 action: 'saveMessage',
                 user_message: userMessage,
                 bot_message: botMessage,
-                conversation_id: convId
+                conversation_id: convId,
+                conversation_summary: conversationSummary
             })
         });
         
@@ -309,6 +331,14 @@ export async function sendChatMessage(conversationId, message) {
         if (!conversationId || conversationId === 'new' || conversationId === 'null' || conversationId === 'undefined') {
             console.log('%c[API] Creating new conversation with initial message', 'color: #9C27B0');
             
+            // Check if we have a pending conversation summary
+            const conversationSummary = window.pendingConversationSummary || null;
+            if (conversationSummary) {
+                console.log('%c[API] Including conversation summary with new conversation', 'color: #4CAF50');
+                // Clear the pending summary after we use it
+                window.pendingConversationSummary = null;
+            }
+            
             // For new conversations, use the 'saveMessage' action with 'new' as the conversation_id
             // This tells the backend to create a new conversation and add this message to it
             const response = await fetch('backend.php', {
@@ -320,7 +350,8 @@ export async function sendChatMessage(conversationId, message) {
                     action: 'saveMessage',
                     user_message: message,
                     bot_message: aiResponse,
-                    conversation_id: 'new'
+                    conversation_id: 'new',
+                    conversation_summary: conversationSummary
                 })
             });
             
@@ -369,12 +400,47 @@ async function callGeminiProxy(message, systemInstruction) {
     const knowledgeResults = window.lastKnowledgeResults;
     let enhancedPrompt = '';
     
+    // Get conversation summary if available
+    let conversationSummary = null;
+    
+    // Import conversation module functions to get the summary
+    const conversationModule = await import('./conversation.js');
+    
+    // Check for existing conversation ID
+    const conversationId = conversationModule.getCurrentConversationId();
+    if (conversationId && conversationId !== 'new' && conversationId !== 'null' && conversationId !== 'undefined') {
+        // Try to get the conversation summary
+        try {
+            console.log('%c[API] Getting conversation summary for context', 'color: #9C27B0');
+            // First check if it's already in memory
+            conversationSummary = conversationModule.getCurrentConversationSummary();
+            
+            // If not in memory, try to fetch it
+            if (!conversationSummary) {
+                console.log('%c[API] Fetching conversation summary from server', 'color: #9C27B0');
+                conversationSummary = await conversationModule.fetchConversationSummary(conversationId);
+            }
+            
+            if (conversationSummary) {
+                console.log('%c[API] Found conversation summary for context', 'color: #4CAF50');
+            }
+        } catch (error) {
+            console.error('%c[API ERROR] Error getting conversation summary:', 'color: #f44336', error);
+            // Continue without summary if there's an error
+        }
+    }
+    
     // Build the prompt based on knowledge base results
     if (knowledgeResults && knowledgeResults.results && knowledgeResults.results.length > 0) {
         console.log('%c[API] Using knowledge base results to enhance prompt', 'color: #9C27B0');
         
         // Start with system instruction
         enhancedPrompt = systemInstruction + "\n\n";
+        
+        // Add conversation summary if available
+        if (conversationSummary) {
+            enhancedPrompt += "Conversation context/summary:\n" + conversationSummary + "\n\n";
+        }
         
         // Add knowledge context
         enhancedPrompt += "Relevant information from the nutrition database:\n\n";
@@ -390,26 +456,44 @@ async function callGeminiProxy(message, systemInstruction) {
         enhancedPrompt += "User query: " + message + "\n\n";
         enhancedPrompt += "Based on the nutrition information above, please provide a helpful response. Include references to the sources when appropriate.";
     } else {
-        // Just use the basic prompt
-        enhancedPrompt = `${systemInstruction}\n\nUser query: ${message}`;
+        // Start with system instruction
+        enhancedPrompt = systemInstruction + "\n\n";
+        
+        // Add conversation summary if available
+        if (conversationSummary) {
+            enhancedPrompt += "Conversation context/summary:\n" + conversationSummary + "\n\n";
+        }
+        
+        // Add user query
+        enhancedPrompt += "User query: " + message;
     }
     
     // Clear the knowledge results for the next request
     window.lastKnowledgeResults = null;
+    
+    // Request configuration - ask the AI to generate a new conversation summary
+    const requestConfig = {
+        model: window.ENV.GEMINI_MODEL_NAME || 'Nourish-1.0',
+        contents: enhancedPrompt,
+        generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048
+        }
+    };
+    
+    // If we have a conversation summary, let's add a special instruction to update it
+    if (conversationSummary) {
+        requestConfig.contents += "\n\nAfter answering the user's query, please generate an updated conversation summary that captures the key points of the entire conversation so far, including this new exchange. Format it as: [SUMMARY] your summary text [/SUMMARY]";
+    } else {
+        requestConfig.contents += "\n\nAfter answering the user's query, please generate a brief conversation summary that captures the key points of this exchange. Format it as: [SUMMARY] your summary text [/SUMMARY]";
+    }
     
     const response = await fetch('gemini-proxy.php', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-            model: window.ENV.GEMINI_MODEL_NAME || 'Nourish-1.0',
-            contents: enhancedPrompt,
-            generationConfig: {
-                temperature: 0.7,
-                maxOutputTokens: 2048
-            }
-        })
+        body: JSON.stringify(requestConfig)
     });
     
     if (!response.ok) {
@@ -418,5 +502,30 @@ async function callGeminiProxy(message, systemInstruction) {
     }
     
     const data = await response.json();
-    return data.text || "I apologize, but I couldn't generate a response at this time.";
+    let aiResponse = data.text || "I apologize, but I couldn't generate a response at this time.";
+    
+    // Extract and store the summary if it exists
+    if (aiResponse.includes('[SUMMARY]') && aiResponse.includes('[/SUMMARY]')) {
+        const summaryRegex = /\[SUMMARY\](.*?)\[\/SUMMARY\]/s;
+        const match = aiResponse.match(summaryRegex);
+        
+        if (match && match[1]) {
+            // Extract the new summary
+            const newSummary = match[1].trim();
+            console.log('%c[API] Extracted new conversation summary', 'color: #4CAF50');
+            
+            // Remove the summary from the visible response
+            aiResponse = aiResponse.replace(summaryRegex, '').trim();
+            
+            // Store the summary in conversation state
+            if (conversationModule && typeof conversationModule.setCurrentConversationSummary === 'function') {
+                conversationModule.setCurrentConversationSummary(newSummary);
+                
+                // Add the summary to saveMessage when it gets called later
+                window.pendingConversationSummary = newSummary;
+            }
+        }
+    }
+    
+    return aiResponse;
 } 
