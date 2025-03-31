@@ -526,6 +526,13 @@ export async function sendMessageToModel(message, model, baseSystemInstruction, 
             currentConversationId,
             summaryForContext // Pass the summary to be saved
         );
+
+        // Debug log for summary being saved
+        console.log('%c[CHAT] Saving message with summary:', 'color: #E91E63', { 
+            summaryLength: summaryForContext ? summaryForContext.length : 0,
+            summaryExcerpt: summaryForContext ? summaryForContext.substring(0, 50) + '...' : 'None',
+            conversationId: currentConversationId || 'new'
+        });
         
         // If this was a new conversation, update the conversation ID and title
         if (isNewConversation && conversationData && conversationData.conversation_id) {
