@@ -145,6 +145,22 @@
             margin-top: 10px;
             font-size: 14px;
         }
+
+        .admin-link {
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.8rem;
+        }
+
+        .admin-link a {
+            color: #666;
+            text-decoration: none;
+        }
+
+        .admin-link a:hover {
+            text-decoration: underline;
+            color: var(--primary-blue);
+        }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
@@ -169,6 +185,9 @@
                 <div class="toggle-form">
                     <span>Don't have an account? </span>
                     <a id="showSignup">Sign Up</a>
+                </div>
+                <div class="admin-link">
+                    <a href="admin/login.php">Admin Access</a>
                 </div>
             </form>
 
@@ -281,8 +300,7 @@
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: `action=signup&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`
-                });
+                    body: `action=signup&username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`                });
                 
                 const responseText = await response.text();
                 let data;
