@@ -145,7 +145,8 @@ if (isset($responseData['candidates'][0]['content']['parts'][0]['text'])) {
 
 // Return the response in the format expected by the frontend
 echo json_encode([
-    "text" => $generatedText
+    "text" => $generatedText,
+    "raw_text" => $generatedText
 ]);
 
 // Log response for debugging

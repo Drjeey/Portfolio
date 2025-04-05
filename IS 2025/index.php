@@ -1,3 +1,46 @@
+<?php
+session_start();
+require_once 'db_config.php';
+require_once 'env.php';
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header("Location: Form.php");
+    exit;
+}
+
+// Get database connection
+$conn = getDbConnection();
+if (!$conn) {
+    die("Database connection failed. Please try again later.");
+}
+
+// Check if user is admin and redirect to admin panel
+$user_id = $_SESSION['user_id'];
+$stmt = $conn->prepare("SELECT is_admin FROM users WHERE id = ?");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+$user = $result->fetch_assoc();
+$stmt->close();
+
+if ($user && $user['is_admin']) {
+    // Debug log for redirect
+    error_log("ADMIN REDIRECT: User ID $user_id is admin, redirecting to admin panel");
+    
+    // Set is_admin in session
+    $_SESSION['is_admin'] = true;
+    
+    // Redirect to admin panel
+    header("Location: admin/index.php");
+    exit;
+} else {
+    // Set is_admin in session to false for non-admin users
+    $_SESSION['is_admin'] = false;
+}
+
+// Continue with rest of the page for non-admin users
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -52,6 +95,42 @@
     <!-- Hidden debug controls - for development only -->
     <div class="debug-controls" style="position: fixed; right: 10px; bottom: 10px; z-index: 9999; display: none;">
         <button id="debug-conversation-btn" style="background: #665CAC; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Debug Conversations</button>
+    </div>
+
+    <!-- Top bar with logout and options -->
+    <div class="top-bar">
+        <div class="branding">
+            <span class="logo"></span>
+            <span class="name">NutriGuide</span>
+        </div>
+        
+        <div class="user-actions">
+            <?php if (isset($_SESSION['user_id'])): ?>
+                <!-- Check if user is admin -->
+                <?php
+                $user_id = $_SESSION['user_id'];
+                $is_admin_stmt = $conn->prepare("SELECT is_admin FROM users WHERE id = ?");
+                $is_admin_stmt->bind_param("i", $user_id);
+                $is_admin_stmt->execute();
+                $is_admin_result = $is_admin_stmt->get_result();
+                $is_admin = $is_admin_result->fetch_assoc()['is_admin'] ?? 0;
+                $is_admin_stmt->close();
+                
+                // Set session value for admin status
+                $_SESSION['is_admin'] = (bool)$is_admin;
+                ?>
+                
+                <!-- Show admin link if user is admin -->
+                <?php if ($is_admin): ?>
+                    <a href="admin/index.php" class="admin-link">Admin Panel</a>
+                <?php endif; ?>
+                
+                <span class="username">
+                    <?php echo htmlspecialchars($_SESSION['username'] ?? 'User'); ?>
+                </span>
+                <a href="process_form.php?logout=true" class="logout-btn">Logout</a>
+            <?php endif; ?>
+        </div>
     </div>
 
     <script defer>

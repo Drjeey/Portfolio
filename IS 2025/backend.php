@@ -35,7 +35,44 @@ if (!$conn) {
 if (!isset($_SESSION['user_id']) && 
     ($_SERVER['REQUEST_METHOD'] === 'GET' || 
     ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])))) {
+    // Special case for check_login
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['check_login'])) {
+        echo json_encode(["success" => false, "error" => "Not logged in"]);
+        exit;
+    }
     echo json_encode(["success" => false, "error" => "Unauthorized"]);
+    exit;
+}
+
+// Handle login status check
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['check_login'])) {
+    $user_id = $_SESSION['user_id'];
+    
+    error_log("CHECK LOGIN: User ID = " . $user_id);
+    
+    // Check if user is admin
+    $stmt = $conn->prepare("SELECT is_admin FROM users WHERE id = ?");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $stmt->store_result();
+    
+    $is_admin = 0;
+    if ($stmt->num_rows > 0) {
+        $stmt->bind_result($is_admin);
+        $stmt->fetch();
+    }
+    $stmt->close();
+    
+    // Convert to boolean and log
+    $is_admin_bool = (bool)$is_admin;
+    error_log("CHECK LOGIN: User is admin = " . ($is_admin_bool ? 'true' : 'false') . " (value: $is_admin)");
+    
+    echo json_encode([
+        "success" => true,
+        "user_id" => $user_id,
+        "username" => $_SESSION['username'] ?? '',
+        "is_admin" => $is_admin_bool
+    ]);
     exit;
 }
 
@@ -77,6 +114,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !isset($_POST['action'])) {
         $user_id = $_SESSION['user_id'] ?? 0;
         $user_message = $data['user_message'] ?? '';
         $bot_message = $data['bot_message'] ?? '';
+        $raw_bot_message = $data['raw_bot_message'] ?? $bot_message; // Get raw model output
         $conversation_id = $data['conversation_id'] ?? 'new';
         $date = date("Y-m-d H:i:s");
         
@@ -128,9 +166,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !isset($_POST['action'])) {
             }
         }
         
-        // Save the message
-        $stmt = $conn->prepare("INSERT INTO chats (user_id, conversation_id, date, user_message, bot_message) VALUES (?, ?, ?, ?, ?)");
-        $stmt->bind_param("iisss", $user_id, $conversation_id, $date, $user_message, $bot_message);
+        // Save the message including the raw model output
+        $stmt = $conn->prepare("INSERT INTO chats (user_id, conversation_id, date, user_message, bot_message, raw_model_output) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("iissss", $user_id, $conversation_id, $date, $user_message, $bot_message, $raw_bot_message);
         
         if ($stmt->execute()) {
             // Update conversation's updated_at timestamp and summary
@@ -333,19 +371,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action'])) {
         }
 
         // Verify user
-        $stmt = $conn->prepare("SELECT id, password FROM users WHERE username = ?");
+        $stmt = $conn->prepare("SELECT id, password, is_admin FROM users WHERE username = ?");
         $stmt->bind_param("s", $username);
         $stmt->execute();
         $stmt->store_result();
 
         if ($stmt->num_rows > 0) {
-            $stmt->bind_result($user_id, $hashed_password);
+            $stmt->bind_result($user_id, $hashed_password, $is_admin);
             $stmt->fetch();
 
             if (password_verify($password, $hashed_password)) {
                 $_SESSION['user_id'] = $user_id;
                 $_SESSION['username'] = $username;
-                echo json_encode(["success" => true, "message" => "Login successful!"]);
+                $_SESSION['is_admin'] = $is_admin;
+                
+                echo json_encode([
+                    "success" => true, 
+                    "message" => "Login successful!",
+                    "is_admin" => $is_admin,
+                    "redirect" => $is_admin ? "admin/index.php" : "index.php"
+                ]);
             } else {
                 echo json_encode(["success" => false, "error" => "Invalid username or password!"]);
             }

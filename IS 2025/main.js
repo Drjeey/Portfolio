@@ -223,9 +223,22 @@ document.addEventListener('DOMContentLoaded', () => {
     
     api.checkLoginStatus()
         .then(response => {
+            console.log("%c👉 Login check response:", "color: #FF9800", response);
+            
             if (response.success) {
-                console.log("%c✅ User authenticated, initializing app", "color: #4CAF50");
-                initChatApp();
+                // Check if user is admin and redirect if needed
+                if (response.is_admin) {
+                    console.log("%c👑 Admin user detected, redirecting to admin panel", "color: #FF9800");
+                    console.log("%c🔄 Current location:", "color: #FF9800", window.location.href);
+                    console.log("%c🔄 Redirecting to:", "color: #FF9800", "admin/index.php");
+                    
+                    // Force redirect with no caching
+                    window.location.replace("admin/index.php");
+                    return; // Stop execution
+                } else {
+                    console.log("%c👤 Regular user detected, initializing app", "color: #4CAF50");
+                    initChatApp();
+                }
             } else {
                 console.log("%c⚠️ User not authenticated, redirecting to login", "color: #FFC107");
                 window.location.href = "Form.php";

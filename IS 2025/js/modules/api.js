@@ -219,7 +219,7 @@ export async function deleteConversation(conversationId) {
 }
 
 // Save a user and bot message pair to a conversation
-export async function saveMessage(userMessage, botMessage, conversationId) {
+export async function saveMessage(userMessage, botMessage, conversationId, rawBotMessage = null) {
     try {
         // Validate conversation ID
         if (!conversationId || conversationId === 'undefined' || conversationId === 'null') {
@@ -249,6 +249,7 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
             action: 'saveMessage',
             user_message: userMessage,
             bot_message: botMessage,
+            raw_bot_message: rawBotMessage || botMessage,
             conversation_id: convId
         };
         
@@ -332,7 +333,7 @@ export async function saveMessage(userMessage, botMessage, conversationId) {
 }
 
 // Save chat messages with conversation summary
-export async function saveChatMessages(userMessage, botMessage, conversationId, conversationSummary = null) {
+export async function saveChatMessages(userMessage, botMessage, conversationId, conversationSummary = null, rawBotMessage = null) {
     try {
         // Log that we're using the more comprehensive saving function
         console.log('%c[API] Using saveChatMessages with conversation summary', 'color: #9C27B0');
@@ -347,7 +348,7 @@ export async function saveChatMessages(userMessage, botMessage, conversationId, 
         }
         
         // Use the existing saveMessage function to handle the actual save
-        const result = await saveMessage(userMessage, botMessage, convId);
+        const result = await saveMessage(userMessage, botMessage, convId, rawBotMessage);
         
         // Add flag to indicate it's the first message if it's a new conversation
         if (result.success && convId === 'new') {
@@ -417,7 +418,9 @@ export async function sendChatMessage(conversationId, message) {
         // Enhanced system instruction with context awareness guidance
         const systemInstruction = "You are NutriGuide, a specialized nutrition assistant powered by Nourish 1.0. While nutrition is your primary focus, you can engage in normal conversation as well. You have access to conversation context in the form of summaries, which means you can remember previous exchanges in this conversation. If asked about memories or what was discussed before, you should acknowledge that you can recall previous messages in the current conversation based on the provided context/summary. If this is the first message in a conversation (no summary provided), you can explain that this is the beginning of your conversation together.";
         
-        const aiResponse = await callGeminiProxy(message, systemInstruction);
+        const aiResult = await callGeminiProxy(message, systemInstruction);
+        const aiResponse = aiResult.text;
+        const rawResponse = aiResult.raw_text || aiResponse;
         
         // Now we have the AI response, handle saving it
         if (!conversationId || conversationId === 'new' || conversationId === 'null' || conversationId === 'undefined') {
@@ -442,6 +445,7 @@ export async function sendChatMessage(conversationId, message) {
                     action: 'saveMessage',
                     user_message: message,
                     bot_message: aiResponse,
+                    raw_bot_message: rawResponse,
                     conversation_id: 'new',
                     conversation_summary: conversationSummary
                 })
@@ -468,7 +472,7 @@ export async function sendChatMessage(conversationId, message) {
             // For existing conversations, simply save the message
             console.log('%c[API] Adding message to existing conversation', 'color: #9C27B0', conversationId);
             
-            const response = await saveMessage(message, aiResponse, conversationId);
+            const response = await saveMessage(message, aiResponse, conversationId, rawResponse);
             
             if (response.success) {
                 // Add AI message to response
@@ -606,71 +610,64 @@ Make your response thorough and informative while keeping the writing natural an
         enhancedPrompt += "User query: " + message;
     }
     
-    // Request configuration
-    const requestConfig = {
-        model: window.ENV.GEMINI_MODEL_NAME || 'Nourish-1.0',
-        contents: enhancedPrompt,
-        generationConfig: {
-            temperature: 0.3,
-            topP: 0.7,
-            topK: 16,
-            maxOutputTokens: 2048
-        }
-    };
-    
-    // If we have a conversation summary, let's add a special instruction to update it
-    if (conversationSummary) {
-        requestConfig.contents += "\n\nAfter answering the user's query, please generate an updated conversation summary that captures the key points of the entire conversation so far, including this new exchange. The summary should include enough detail to help you remember what was discussed, including specific questions asked and information provided. Format it as: [SUMMARY] your comprehensive summary text [/SUMMARY]";
-    } else {
-        requestConfig.contents += "\n\nAfter answering the user's query, please generate a brief conversation summary that captures the key points of this exchange. The summary should include the user's question and the main points of your response to help you recall this conversation later. Format it as: [SUMMARY] your summary text [/SUMMARY]";
-    }
-    
-    console.log('%c[API] Gemini API request payload:', 'color: #9C27B0', requestConfig);
-    
+    console.log('%c[API] Sending request to Gemini proxy', 'color: #9C27B0');
+
+    // Reset knowledge results
+    window.lastKnowledgeResults = null;
+
     try {
         const response = await fetch('gemini-proxy.php', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(requestConfig)
+            body: JSON.stringify({
+                model: window.ENV && window.ENV.GEMINI_MODEL_NAME ? window.ENV.GEMINI_MODEL_NAME : 'gemini-pro',
+                contents: enhancedPrompt
+            })
         });
         
         if (!response.ok) {
-            throw new Error(`Server error: ${response.status}`);
+            console.error('%c[API ERROR] Error from Gemini proxy:', 'color: #f44336', response.status);
+            throw new Error(`Gemini proxy error: ${response.status}`);
         }
         
-        const responseData = await response.json();
-        let aiResponse = responseData.text || '';
+        const data = await response.json();
+        console.log('%c[API] Received response from Gemini proxy', 'color: #4CAF50');
         
-        // Extract and store the summary if it exists
-        if (aiResponse.includes('[SUMMARY]') && aiResponse.includes('[/SUMMARY]')) {
-            const summaryRegex = /\[SUMMARY\](.*?)\[\/SUMMARY\]/s;
-            const match = aiResponse.match(summaryRegex);
+        if (!data.text) {
+            console.error('%c[API ERROR] No text in response from Gemini proxy', 'color: #f44336', data);
+            throw new Error('No text in response from Gemini proxy');
+        }
+        
+        // Handle summary extraction
+        if (data.text.includes('[SUMMARY]') && data.text.includes('[/SUMMARY]')) {
+            const summaryPattern = /\[SUMMARY\](.*?)\[\/SUMMARY\]/s;
+            const match = data.text.match(summaryPattern);
             
             if (match && match[1]) {
-                // Extract the new summary
-                const newSummary = match[1].trim();
-                console.log('%c[API] Extracted new conversation summary', 'color: #4CAF50');
-                console.log('%c[API] Summary content:', 'color: #4CAF50', newSummary.substring(0, 100) + '...');
-                console.log('%c[API] Summary length:', 'color: #4CAF50', newSummary.length);
+                const extractedSummary = match[1].trim();
+                console.log('%c[API] Extracted conversation summary from response', 'color: #4CAF50');
+                window.pendingConversationSummary = extractedSummary;
                 
-                // Remove the summary from the visible response
-                aiResponse = aiResponse.replace(summaryRegex, '').trim();
+                // Remove the summary from the response
+                const cleanedResponse = data.text.replace(summaryPattern, '').trim();
                 
-                // Store the summary in conversation state
-                if (conversationModule && typeof conversationModule.setCurrentConversationSummary === 'function') {
-                    conversationModule.setCurrentConversationSummary(newSummary);
-                }
-                
-                // Add the summary to saveMessage when it gets called later
-                window.pendingConversationSummary = newSummary;
+                // Return the cleaned response
+                return {
+                    text: cleanedResponse,
+                    raw_text: data.raw_text || data.text
+                };
             }
         }
         
-        return aiResponse;
+        // If no summary extraction, return the raw response
+        return {
+            text: data.text,
+            raw_text: data.raw_text || data.text
+        };
     } catch (error) {
-        console.error('%c[API ERROR] Error getting AI response:', 'color: #f44336', error);
+        console.error('%c[API ERROR] Exception in callGeminiProxy:', 'color: #f44336', error);
         throw error;
     }
 } 

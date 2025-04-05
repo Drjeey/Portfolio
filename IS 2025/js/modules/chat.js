@@ -575,7 +575,8 @@ export async function sendMessageToModel(message, model, baseSystemInstruction, 
             userMessage, 
             displayResponse,
             currentConversationId,
-            summaryForContext // Pass the summary to be saved
+            summaryForContext, // Pass the summary to be saved
+            responseForUser
         );
 
         // Debug log for summary being saved
@@ -803,8 +804,12 @@ export async function saveMessageToHistory(userMessage, botResponse) {
         const conversationId = conversation.getCurrentConversationId() || 'new';
         console.log("Saving messages to conversation:", conversationId);
         
+        // Check if botResponse is an object with text and raw_text properties
+        let botText = typeof botResponse === 'object' && botResponse.text ? botResponse.text : botResponse;
+        let rawBotText = typeof botResponse === 'object' && botResponse.raw_text ? botResponse.raw_text : botText;
+        
         // Save the message pair
-        const response = await api.saveChatMessages(userMessage, botResponse, conversationId);
+        const response = await api.saveChatMessages(userMessage, botText, conversationId, null, rawBotText);
         
         if (!response.success) {
             console.error("Error saving messages:", response.error);

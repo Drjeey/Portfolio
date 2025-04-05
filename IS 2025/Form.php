@@ -253,7 +253,8 @@
                 }
                 
                 if (data.success) {
-                    window.location.href = 'index.php';
+                    // Use the redirect URL provided by the backend
+                    window.location.href = data.redirect || 'index.php';
                 } else {
                     loginError.textContent = data.error || 'Login failed';
                 }
